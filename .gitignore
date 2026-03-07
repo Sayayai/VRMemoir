@@ -1,0 +1,9 @@
+/target
+.env
+vrc_data.db
+data.db
+recordings/
+/user
+vrc-extractor.exe
+vrc-ex
+/test/
