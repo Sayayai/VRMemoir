@@ -278,6 +278,43 @@ MIC_DEVICE=
     en.insert("group_id", "Group ID");
     en.insert("description", "Description");
     en.insert("no_data", "None");
+    en.insert(
+        "pacing_evaluating_bio",
+        "Pacing loop: Evaluating BIO for {} ({})",
+    );
+    en.insert(
+        "pacing_fetch_failed",
+        "Pacing loop fetch failed for {}. Cooling down for 60s.",
+    );
+    en.insert("pacing_wait_for_vrchat", "Waiting for VRChat to start...");
+    en.insert(
+        "vrchat_started_tracking",
+        "VRChat started! Initiating log tracking.",
+    );
+    en.insert(
+        "vrchat_was_running_catchup",
+        "VRChat was running. Scanning file to locate current room...",
+    );
+    en.insert(
+        "resuming_log_tracking",
+        "Resuming log tracking from offset: {}",
+    );
+    en.insert(
+        "scanning_from_eof",
+        "Scanning from current end of log file.",
+    );
+    en.insert(
+        "catchup_player_joined",
+        "Catch-up: Received PlayerJoined while Idle. Forcing state to InWorld.",
+    );
+    en.insert(
+        "catchup_player_left",
+        "Catch-up: Received PlayerLeft while Idle. Forcing state to InWorld.",
+    );
+    en.insert(
+        "auto_start_detected_pid",
+        "Auto-start: Detected VRChat PID {} while InWorld, attempting to start recording.",
+    );
 
     m.insert(Language::En, en);
 
@@ -458,9 +495,34 @@ MIC_DEVICE=
     zh.insert("badges", "展示徽章");
     zh.insert("age_verification_status", "年龄验证状态");
     zh.insert("age_verified", "已通过年龄验证");
-    zh.insert("group_id", "Group ID");
-    zh.insert("description", "Description");
+    zh.insert("group_id", "群组 ID");
+    zh.insert("description", "描述");
     zh.insert("no_data", "无");
+    zh.insert("pacing_evaluating_bio", "轮询检查: 正在评估 {} ({}) 的 BIO");
+    zh.insert(
+        "pacing_fetch_failed",
+        "轮询获取失败: {}。冷却 60 秒后再试。",
+    );
+    zh.insert("pacing_wait_for_vrchat", "正在等待 VRChat 启动...");
+    zh.insert("vrchat_started_tracking", "VRChat 已启动！开始追踪日志。");
+    zh.insert(
+        "vrchat_was_running_catchup",
+        "VRChat 正在运行。正在扫描文件定位当前房间...",
+    );
+    zh.insert("resuming_log_tracking", "从偏移量 {} 处恢复日志追踪");
+    zh.insert("scanning_from_eof", "从当前日志文件末尾开始扫描。");
+    zh.insert(
+        "catchup_player_joined",
+        "自动追赶: 在 Idle 状态收到玩家加入。强制切换到 InWorld。",
+    );
+    zh.insert(
+        "catchup_player_left",
+        "自动追赶: 在 Idle 状态收到玩家离开。强制切换到 InWorld。",
+    );
+    zh.insert(
+        "auto_start_detected_pid",
+        "自动启动: 在 InWorld 状态检测到 VRChat PID {}，尝试开始录制。",
+    );
 
     m.insert(Language::Zh, zh);
 
@@ -713,12 +775,45 @@ MIC_DEVICE=
         "シンボリックリンクの作成に失敗したため、ユーザー {} のBIOをコピーしました",
     );
     ja.insert(
-        "bio_fetch_failed",
-        "ユーザー {} のBIO取得に失敗しました: {}",
-    );
-    ja.insert(
         "bio_queue_skipped_no_login",
         "{} のBIO取得をスキップしました (API経由でログインしていません)",
+    );
+    ja.insert(
+        "pacing_evaluating_bio",
+        "ポーリングチェック: {} ({}) の BIO を評価中",
+    );
+    ja.insert(
+        "pacing_fetch_failed",
+        "ポーリング取得失敗: {}。60秒間待機します。",
+    );
+    ja.insert("pacing_wait_for_vrchat", "VRChat の起動を待機中...");
+    ja.insert(
+        "vrchat_started_tracking",
+        "VRChat が起動しました！ログの追跡を開始します。",
+    );
+    ja.insert(
+        "vrchat_was_running_catchup",
+        "VRChat が実行中です。現在のルームを特定するためにファイルをス캔しています...",
+    );
+    ja.insert(
+        "resuming_log_tracking",
+        "オフセット {} からログの追跡を再開します",
+    );
+    ja.insert(
+        "scanning_from_eof",
+        "現在のログファイルの末尾からスキャンを開始します。",
+    );
+    ja.insert(
+        "catchup_player_joined",
+        "キャッチアップ: Idle 状態でプレイヤーの入室を検出。强制的に InWorld に移行します。",
+    );
+    ja.insert(
+        "catchup_player_left",
+        "キャッチアップ: Idle 状態でプレイヤーの退室を検出。强制的に InWorld に移行します。",
+    );
+    ja.insert(
+        "auto_start_detected_pid",
+        "自動起動: InWorld 状態で VRChat PID {} を検出。録音の開始を試みます。",
     );
 
     m.insert(Language::Ja, ja);
@@ -947,7 +1042,41 @@ MIC_DEVICE=
     ko.insert("bio_fetch_failed", "사용자 {}의 BIO 가져오기 실패: {}");
     ko.insert(
         "bio_queue_skipped_no_login",
-        "{} BIO 가져오기 건너뜀 (API를 통한 로그인 안 됨)",
+        "{} BIO 가져오기 건너뜀 (API를 통해 로그인 안 됨)",
+    );
+    ko.insert("pacing_evaluating_bio", "폴링 체크: {} ({})의 BIO 평가 중");
+    ko.insert(
+        "pacing_fetch_failed",
+        "폴링 가져오기 실패: {}。60초 동안 대기합니다.",
+    );
+    ko.insert("pacing_wait_for_vrchat", "VRChat 시작 대기 중...");
+    ko.insert(
+        "vrchat_started_tracking",
+        "VRChat이 시작되었습니다! 로그 추적을 시작합니다.",
+    );
+    ko.insert(
+        "vrchat_was_running_catchup",
+        "VRChat이 실행 중입니다. 현재 방을 찾기 위해 파일을 스캔하는 중...",
+    );
+    ko.insert(
+        "resuming_log_tracking",
+        "오프셋 {}에서 로그 추적을 재개합니다",
+    );
+    ko.insert(
+        "scanning_from_eof",
+        "현재 로그 파일의 끝부터 스캔을 시작합니다.",
+    );
+    ko.insert(
+        "catchup_player_joined",
+        "캐치업: Idle 상태에서 플레이어 입장을 감지. 강제로 InWorld로 전환합니다.",
+    );
+    ko.insert(
+        "catchup_player_left",
+        "캐치업: Idle 상태에서 플레이어 퇴장을 감지. 강제로 InWorld로 전환합니다.",
+    );
+    ko.insert(
+        "auto_start_detected_pid",
+        "자동 시작: InWorld 상태에서 VRChat PID {} 감지. 녹음 시작을 시도합니다.",
     );
 
     m.insert(Language::Ko, ko);

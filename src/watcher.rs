@@ -234,23 +234,77 @@ impl LogWatcher {
         }
     }
 
+    /// Read the log file to find the byte offset just before the last `Entering Room` event.
+    fn find_last_room_offset(&self, path: &Path) -> u64 {
+        use std::io::{BufRead, BufReader};
+
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return 0,
+        };
+
+        // We will read line by line and track the byte offset of the start of the line.
+        // If the file is huge, reading forwards is still very fast in Rust, and easier than backwards seeking for text.
+        let mut reader = BufReader::new(file);
+        let mut offset: u64 = 0;
+        let mut last_found_offset: Option<u64> = None;
+        let mut line = String::new();
+
+        while let Ok(bytes_read) = reader.read_line(&mut line) {
+            if bytes_read == 0 {
+                break; // EOF
+            }
+
+            if line.contains("[Behaviour] Entering Room:") {
+                last_found_offset = Some(offset);
+            }
+
+            offset += bytes_read as u64;
+            line.clear();
+        }
+
+        last_found_offset.unwrap_or(0)
+    }
+
     /// Start watching logs. Returns a receiver for log events.
     pub async fn start(mut self) -> Result<mpsc::UnboundedReceiver<LogEvent>> {
         let (tx, rx) = mpsc::unbounded_channel();
-
-        // Find and read the latest log on startup (last 5KB)
-        self.current_log_file = self.get_latest_log_file();
-        if let Some(ref log_file) = self.current_log_file {
-            if let Ok(meta) = fs::metadata(log_file) {
-                self.last_read_pos = meta.len().saturating_sub(50_000);
-            }
-            self.read_new_lines(&tx);
-        }
-
         let log_dir = self.log_dir.clone();
 
-        // Polling-based watcher (simpler and more reliable on Windows than fsnotify for log tailing)
         tokio::spawn(async move {
+            // 1. Check if VRChat is currently running when we start
+            let was_running = crate::recorder::find_vrchat_pid().is_some();
+
+            if !was_running {
+                info!("{}", t!("pacing_wait_for_vrchat"));
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    if crate::recorder::find_vrchat_pid().is_some() {
+                        info!("{}", t!("vrchat_started_tracking"));
+                        break;
+                    }
+                }
+            }
+
+            // 2. Initialize log file tracking
+            self.current_log_file = self.get_latest_log_file();
+            if let Some(ref log_file) = self.current_log_file {
+                if let Ok(meta) = fs::metadata(log_file) {
+                    if was_running {
+                        // App started AFTER VRChat: find exact location of last room join
+                        info!("{}", t!("vrchat_was_running_catchup"));
+                        self.last_read_pos = self.find_last_room_offset(log_file);
+                        info!("{}", t!("resuming_log_tracking", self.last_read_pos));
+                    } else {
+                        // App started BEFORE VRChat: ignore past session, only read new lines
+                        info!("{}", t!("scanning_from_eof"));
+                        self.last_read_pos = meta.len();
+                    }
+                }
+                self.read_new_lines(&tx);
+            }
+
+            // 3. Normal polling loop (simpler and more reliable on Windows than fsnotify)
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;

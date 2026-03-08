@@ -153,7 +153,7 @@ async fn get_vrc_user_info(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<String>,
 ) -> impl IntoResponse {
-    match state.bio.process_user(&user_id, true, None).await {
+    match state.bio.process_user(&user_id, true, None, true).await {
         Ok(user_data) => axum::response::Response::builder()
             .header("content-type", "application/json; charset=utf-8")
             .body(axum::body::Body::from(

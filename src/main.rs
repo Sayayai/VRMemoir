@@ -207,7 +207,6 @@ async fn main() -> Result<()> {
     let mic_config_shared = Arc::new(mic_config);
     let fsm = Arc::new(tokio::sync::Mutex::new(AppFsm::new(
         db.clone(),
-        bio_manager.clone(),
         mic_config_shared,
         exe_dir.clone(),
     )));
@@ -221,14 +220,41 @@ async fn main() -> Result<()> {
         }
     });
 
-    // 进程退出检测 — 轮询 VRChat 进程是否存活
-    let fsm_for_monitor = fsm.clone();
+    // FSM Tick Loop (Keep-alive & BIO Pacing)
+    let fsm_for_tick = fsm.clone();
+    let bio_for_tick = bio_manager.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        // Run tick every 1 second
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         loop {
             interval.tick().await;
-            let mut fsm = fsm_for_monitor.lock().await;
-            fsm.check_process_alive();
+
+            // 1. Process keep-alive, auto-start and get candidate
+            let candidate = {
+                let mut fsm = fsm_for_tick.lock().await;
+                fsm.check_process_alive();
+                fsm.try_auto_start_recording();
+                fsm.get_next_bio_candidate()
+            };
+
+            // 2. Do the fetch outside the lock
+            if let Some((uid, name, output_dir_path)) = candidate {
+                tracing::info!("{}", t!("pacing_evaluating_bio", name, uid));
+
+                // Do NOT skip rate limit: pass `false`
+                let success = bio_for_tick
+                    .process_user(&uid, false, Some(&output_dir_path), false)
+                    .await
+                    .is_ok();
+
+                if !success {
+                    tracing::warn!("{}", t!("pacing_fetch_failed", name));
+                }
+
+                // 3. Update FSM state with result
+                let mut fsm = fsm_for_tick.lock().await;
+                fsm.mark_bio_result(&uid, success);
+            }
         }
     });
 
@@ -247,6 +273,38 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, router).await {
             error!("{}", t!("server_error", e));
+        }
+    });
+
+    // Spawn terminal input listener
+    let bio_for_stdin = bio_manager.clone();
+    tokio::spawn(async move {
+        let std_in = tokio::io::stdin();
+        let mut reader = BufReader::new(std_in).lines();
+        let re = regex::Regex::new(r"^usr_[a-fA-F0-9\-]+$").unwrap();
+
+        while let Ok(Some(line)) = reader.next_line().await {
+            let input = line.trim();
+            if input.is_empty() {
+                continue;
+            }
+            if re.is_match(input) {
+                info!("Manual BIO fetch triggered for: {}", input);
+                match bio_for_stdin.process_user(input, true, None, true).await {
+                    Ok(data) => {
+                        let name = data
+                            .get("displayName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown");
+                        info!("Successfully fetched BIO for: {} ({})", name, input);
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch BIO for {}: {}", input, e);
+                    }
+                }
+            } else {
+                info!("Invalid input. If you want to fetch a user, paste a valid VRChat User ID (e.g., usr_xxx).");
+            }
         }
     });
 

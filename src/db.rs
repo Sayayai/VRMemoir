@@ -155,15 +155,14 @@ impl Database {
         );
     }
 
-    pub fn get_user_bio(&self, user_id: &str) -> Option<String> {
+    pub fn get_display_name(&self, user_id: &str) -> Option<String> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT lastBio FROM users WHERE userId = ?1",
+            "SELECT displayName FROM users WHERE userId = ?1",
             params![user_id],
             |row| row.get(0),
         )
         .ok()
-        .flatten()
     }
 
     pub fn update_bio_history(&self, user_id: &str, display_name: &str, bio: &str) {
@@ -214,9 +213,7 @@ impl Database {
                  FROM visits v
                  JOIN users u ON v.userId = u.userId
                  WHERE v.leftAt IS NULL 
-                 AND v.joinedAt >= ?1
-                 AND (u.lastBio IS NULL OR u.lastBio = '')
-                 AND (u.updatedAt IS NULL OR u.updatedAt < datetime('now', '-2 hours'))",
+                 AND v.joinedAt >= ?1",
             )
             .unwrap();
         let rows = stmt

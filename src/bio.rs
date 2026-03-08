@@ -31,20 +31,37 @@ impl BioManager {
         user_id: &str,
         force_refresh: bool,
         session_dir: Option<&Path>,
+        skip_rate_limit: bool,
     ) -> Result<serde_json::Value> {
-        // 1. Check Database first (unless forced)
+        // Find if local file already exists for this user ID
+        // The display name might have changed so we rely on fetching basic info or just check if it was fetched previously
+        // Actually, without fetching, we don't know the display name to check the local file accurately.
+        // Let's use the Database's `displayName` for this user to check local file existence.
+
+        // 1. Check local file existence first (unless forced)
         if !force_refresh {
-            if let Some(bio) = self.db.get_user_bio(user_id) {
-                if !bio.is_empty() {
-                    // We already have the bio. Skip everything.
-                    // Return a minimal JSON since this is an automatic trigger
-                    return Ok(serde_json::json!({ "id": user_id, "bio": bio, "cached": true }));
+            if let Some(display_name) = self.db.get_display_name(user_id) {
+                if let Some(existing_file) = self.find_existing_bio_file(&display_name) {
+                    tracing::info!(
+                        "BIO already exists locally for {} ({}), skipping fetch.",
+                        display_name,
+                        user_id
+                    );
+                    // Also create symlink if needed using the existing file
+                    if let Some(target_dir) = session_dir {
+                        let _ = self.create_symlink(&existing_file, target_dir, &display_name);
+                    }
+                    return Ok(
+                        serde_json::json!({ "id": user_id, "cached_file": existing_file.display().to_string(), "cached": true }),
+                    );
                 }
             }
         }
 
         // 2. Rate Limiting
-        self.check_rate_limit(user_id).await?;
+        if !skip_rate_limit {
+            self.check_rate_limit(user_id).await?;
+        }
 
         // 3. Fetch from VRChat API
         let user_data = self.api.get_user_info(user_id).await?;
@@ -126,7 +143,7 @@ impl BioManager {
         let display_name_safe = re.replace_all(display_name, "_").to_string();
 
         let mut md_content = Vec::new();
-        let _bio_start_line = 1;
+        // L1 is the title
         md_content.push(t!("user_info_title"));
         md_content.push("".to_string());
 
@@ -145,6 +162,11 @@ impl BioManager {
 
         self.generate_md_body(user_data, &allowed_keys, &priority_keys, &mut md_content);
         let bio_end_line = md_content.len();
+
+        // Separate section with timestamp
+        md_content.push("---".to_string());
+        let current_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        md_content.push(format!("> Retrieval Time: {}", current_time)); // Placing timestamp here
         md_content.push("---".to_string());
         md_content.push("".to_string());
 
@@ -176,10 +198,10 @@ impl BioManager {
         }
         let groups_end_line = md_content.len();
 
-        let current_date = chrono::Local::now().format("%Y-%m-%d").to_string();
+        // New filename pattern: DisplayName_L1-LX_BIO_LY-LZ_GROUPS.md
         let file_name = format!(
-            "{}_{}_L{}-L{}_BIO_L{}-L{}_GROUPS.md",
-            current_date, display_name_safe, 1, bio_end_line, groups_start_line, groups_end_line
+            "{}_L1-L{}_BIO_L{}-L{}_GROUPS.md",
+            display_name_safe, bio_end_line, groups_start_line, groups_end_line
         );
 
         let file_path = bio_dir.join(&file_name);
@@ -317,15 +339,21 @@ impl BioManager {
         &self,
         target_path: &Path,
         session_dir: &Path,
-        display_name: &str,
+        _display_name: &str,
     ) -> Result<()> {
         let abs_target = std::fs::canonicalize(target_path)?;
 
-        // Sanitize display name for the link filename
-        let re = regex::Regex::new(r#"[\\/:*?"<>|]"#)?;
-        let display_name_safe = re.replace_all(display_name.trim(), "_").to_string();
-        let link_name = format!("{}_BIO.md", display_name_safe);
-        let link_path = session_dir.join(link_name);
+        // Create the bio/ subdirectory in the session folder
+        let session_bio_dir = session_dir.join("bio");
+        if !session_bio_dir.exists() {
+            std::fs::create_dir_all(&session_bio_dir)?;
+        }
+
+        // Use the exact filename from the target path for the symlink
+        let link_name = target_path
+            .file_name()
+            .ok_or_else(|| anyhow!("Invalid target path for symlink"))?;
+        let link_path = session_bio_dir.join(link_name);
 
         // Idempotency: skip if already correct
         if link_path.exists() {
@@ -356,5 +384,27 @@ impl BioManager {
         }
 
         Ok(())
+    }
+
+    /// Search the `bio/` directory for any file that matches the user's display name.
+    fn find_existing_bio_file(&self, display_name: &str) -> Option<PathBuf> {
+        let bio_dir = Path::new("bio");
+        if !bio_dir.exists() {
+            return None;
+        }
+
+        let re = regex::Regex::new(r#"[\\/:*?"<>|]"#).ok()?;
+        let display_name_safe = re.replace_all(display_name.trim(), "_").to_string();
+        let search_pattern = format!("{}_L1-", display_name_safe);
+
+        if let Ok(entries) = std::fs::read_dir(bio_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains(&search_pattern) && name.ends_with(".md") {
+                    return Some(entry.path());
+                }
+            }
+        }
+        None
     }
 }
