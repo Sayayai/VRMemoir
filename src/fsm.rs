@@ -1,7 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
+
+use crate::bio::BioManager;
 use crate::db::Database;
 use crate::recorder::{find_vrchat_pid, MicConfig};
 use crate::session::{PlayerEventType, RecordingSession};
@@ -34,20 +38,28 @@ enum AppState {
 // 有限状态机
 // ---------------------------------------------------------------------------
 
+
 /// 集中管理所有运行时状态与状态转换逻辑的有限状态机。
 pub struct AppFsm {
     state: AppState,
     db: Arc<Database>,
+    bio_manager: Arc<BioManager>,
     mic_config: Arc<MicConfig>,
     base_dir: PathBuf,
 }
 
 impl AppFsm {
     /// 创建一个新的 FSM，初始状态为 `Idle`。
-    pub fn new(db: Arc<Database>, mic_config: Arc<MicConfig>, base_dir: PathBuf) -> Self {
+    pub fn new(
+        db: Arc<Database>, 
+        bio_manager: Arc<BioManager>,
+        mic_config: Arc<MicConfig>, 
+        base_dir: PathBuf
+    ) -> Self {
         Self {
             state: AppState::Idle,
             db,
+            bio_manager,
             mic_config,
             base_dir,
         }
@@ -145,23 +157,74 @@ impl AppFsm {
         let world_name = match &self.state {
             AppState::InWorld { world_name } => world_name.clone(),
             AppState::Idle => t!("unknown_world"),
-            // finish_current_session 之后不会还在 Recording，但为完整性处理
             AppState::Recording { world_name, .. } => world_name.clone(),
+        };
+
+        // Parse instance ID from location string
+        let instance_id = location.split(':').nth(1).unwrap_or("").to_string();
+        let instance_id_str = if instance_id.is_empty() {
+            t!("unknown_instance")
+        } else {
+            instance_id.clone()
         };
 
         info!("{}", t!("instance", location));
 
         // 3. 尝试开始新录音
         if let Some(pid) = find_vrchat_pid() {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let world_name_str = world_name.clone();
+
             let mc = (*self.mic_config).clone();
-            match RecordingSession::start(&self.base_dir, &world_name, &location, mc, pid) {
-                Ok(new_session) => {
-                    info!("{}", t!("mic_start", pid, world_name, location));
+            match RecordingSession::start(&self.base_dir, &world_name_str, &instance_id_str, mc, pid) {
+                Ok(session) => {
+                    info!("{}", t!("entering_recording_state"));
+                    let output_dir = session.output_dir.clone();
+                    let world_name_for_loop = world_name_str.clone();
+                    let _instance_id_for_loop = instance_id_str.clone();
+
                     self.state = AppState::Recording {
-                        world_name,
-                        instance_id: location,
-                        session: new_session,
+                        world_name: world_name_str,
+                        instance_id: instance_id_str,
+                        session,
                     };
+
+                    // Start BIO Pacing Loop
+                    let bio_manager = self.bio_manager.clone();
+                    let db = self.db.clone();
+                    let session_start_time = timestamp.clone();
+                    let mut retry_cooldown: HashMap<String, Instant> = HashMap::new();
+                    
+                    tokio::spawn(async move {
+                        info!("Starting BIO pacing loop for {}...", world_name_for_loop);
+                        loop {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+                            
+                            // 1. Get players who joined AFTER the session started and have no BIO
+                            let missing = db.get_active_players_without_bio(&session_start_time);
+                            
+                            // 2. Filter out those in retry cooldown (e.g., failed in the last 60 seconds)
+                            let now = Instant::now();
+                            let candidate = missing.iter().find(|(uid, _)| {
+                                if let Some(last_fail) = retry_cooldown.get(uid) {
+                                    now.duration_since(*last_fail) > Duration::from_secs(60)
+                                } else {
+                                    true
+                                }
+                            });
+
+                            if let Some((uid, name)) = candidate {
+                                info!("Pacing loop: Fetching BIO for {} ({})", name, uid);
+                                if let Err(e) = bio_manager.process_user(uid, false, Some(&output_dir)).await {
+                                    warn!("Pacing loop fetch failed for {}: {}. Cooling down for 60s.", name, e);
+                                    retry_cooldown.insert(uid.clone(), now);
+                                } else {
+                                    // Success! Remove from cooldown if it was there
+                                    retry_cooldown.remove(uid);
+                                }
+                            }
+                        }
+                    });
                 }
                 Err(e) => {
                     warn!("{}", t!("mic_start_failed", e));
@@ -192,6 +255,8 @@ impl AppFsm {
             self.db.register_user(uid, &display_name, None, None, None);
             let (wn, inst) = self.current_world_instance();
             self.db.start_visit(uid, &wn, &inst, &timestamp);
+            
+            // Note: Auto-BIO is now handled by a polling loop in the Recording state
         }
     }
 
@@ -216,7 +281,6 @@ impl AppFsm {
 
     /// 结束当前录音会话并将状态回退到 Idle。
     fn finish_current_session(&mut self, reason: &str) {
-        // 用 std::mem::replace 取出当前状态
         let old_state = std::mem::replace(&mut self.state, AppState::Idle);
 
         if let AppState::Recording { session, .. } = old_state {

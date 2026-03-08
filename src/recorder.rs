@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
+#[cfg(windows)]
 use std::collections::VecDeque;
+#[cfg(windows)]
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,7 +9,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use sysinfo::System;
-use tracing::{error, info, warn};
+use tracing::{error, info};
+#[cfg(windows)]
+use tracing::warn;
 
 use crate::t;
 
@@ -15,9 +19,10 @@ use crate::t;
 pub fn find_vrchat_pid() -> Option<u32> {
     let system = System::new_all();
     for (pid, process) in system.processes() {
+        let process: &sysinfo::Process = process;
         let name = process.name().to_string_lossy();
         if name.eq_ignore_ascii_case("VRChat.exe") || name.eq_ignore_ascii_case("vrchat.exe") {
-            return Some(pid.as_u32());
+            return Some((*pid).as_u32());
         }
     }
     None
@@ -70,7 +75,9 @@ pub fn read_vrchat_mic_device() -> Option<String> {
 /// Configuration for mic recording
 #[derive(Clone, Debug)]
 pub struct MicConfig {
+    #[allow(dead_code)]
     pub enabled: bool,
+    #[allow(dead_code)]
     pub device_name: Option<String>,
 }
 
@@ -142,6 +149,7 @@ impl Drop for AudioRecorder {
 
 /// The actual capture thread function.
 /// Uses WASAPI process loopback to capture VRChat audio, optionally mixes mic input.
+#[cfg(windows)]
 fn capture_thread(
     process_id: u32,
     output_path: &std::path::Path,
@@ -403,17 +411,25 @@ fn capture_thread(
     Ok(duration)
 }
 
+#[cfg(not(windows))]
+fn capture_thread(
+    _process_id: u32,
+    _output_path: &std::path::Path,
+    _stop_flag: &AtomicBool,
+    _mic_config: &MicConfig,
+) -> Result<Duration> {
+    Err(anyhow!("Audio recording is only supported on Windows"))
+}
+
 /// Holds the mic capture resources
+#[cfg(windows)]
 struct MicCaptureState {
     client_wrapper: wasapi::AudioClient,
     capture_client: wasapi::AudioCaptureClient,
 }
 
-impl MicCaptureState {
-    // Note: event handle lifetime is tied to AudioClient, so we don't need to store it
-}
-
 /// Set up WASAPI mic capture client
+#[cfg(windows)]
 fn setup_mic_capture(
     desired_format: &wasapi::WaveFormat,
     mic_config: &MicConfig,
@@ -463,6 +479,7 @@ fn setup_mic_capture(
 }
 
 /// Find an input device by its friendly name
+#[cfg(windows)]
 fn find_input_device_by_name(enumerator: &wasapi::DeviceEnumerator, name: &str) -> Result<wasapi::Device> {
     let collection = enumerator.get_device_collection(&wasapi::Direction::Capture)
         .map_err(|e| anyhow!("Failed to enumerate capture devices: {:?}", e))?;
@@ -482,6 +499,7 @@ fn find_input_device_by_name(enumerator: &wasapi::DeviceEnumerator, name: &str) 
 }
 
 /// Mix two PCM i16 sample buffers together with clamping to prevent overflow
+#[cfg(windows)]
 fn mix_pcm(a: &[i16], b: &[i16]) -> Vec<i16> {
     let len = a.len().max(b.len());
     let mut out = Vec::with_capacity(len);
@@ -495,6 +513,7 @@ fn mix_pcm(a: &[i16], b: &[i16]) -> Vec<i16> {
 }
 
 /// Check if a process is still alive
+#[cfg(windows)]
 fn is_process_alive(pid: u32) -> bool {
     let system = System::new_all();
     system
@@ -503,6 +522,7 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 /// Generate a pseudo-random serial number for OGG stream
+#[cfg(windows)]
 fn rand_serial() -> u32 {
     use std::time::SystemTime;
     let t = SystemTime::now()
@@ -513,6 +533,7 @@ fn rand_serial() -> u32 {
 
 /// Write the required Opus header and comment packets to an OGG stream.
 /// See https://www.rfc-editor.org/rfc/rfc7845#section-5
+#[cfg(windows)]
 fn write_opus_header(
     writer: &mut ogg::PacketWriter<&mut File>,
     serial: u32,

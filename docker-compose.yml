@@ -10,6 +10,7 @@ services:
     # 如果你想让它构建完后自动把产物放到容易找的地方
     command: >
       sh -c "cargo build --release --target x86_64-pc-windows-gnu && 
+             mkdir -p test &&
              cp target/x86_64-pc-windows-gnu/release/vrmemoir.exe ./test/vrmemoir.exe"
 
 volumes:

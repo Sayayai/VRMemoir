@@ -43,46 +43,10 @@ pub struct ActivePlayer {
     pub joined_at: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct UserWithPersonality {
-    #[serde(rename = "userId")]
-    pub user_id: String,
-    #[serde(rename = "displayName")]
-    pub display_name: Option<String>,
-    #[serde(rename = "trustLevel")]
-    pub trust_level: Option<String>,
-    #[serde(rename = "lastBio")]
-    pub last_bio: Option<String>,
-    pub pronouns: Option<String>,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: Option<String>,
-    #[serde(rename = "mbtiType")]
-    pub mbti_type: Option<String>,
-    pub ni: Option<i32>,
-    pub te: Option<i32>,
-    pub fi: Option<i32>,
-    pub se: Option<i32>,
-    pub ne: Option<i32>,
-    pub ti: Option<i32>,
-    pub fe: Option<i32>,
-    pub si: Option<i32>,
-}
 
-#[derive(Debug, serde::Deserialize)]
-pub struct PersonalityData {
-    #[serde(rename = "userId")]
-    pub user_id: String,
-    #[serde(rename = "mbtiType")]
-    pub mbti_type: Option<String>,
-    pub ni: Option<i32>,
-    pub te: Option<i32>,
-    pub fi: Option<i32>,
-    pub se: Option<i32>,
-    pub ne: Option<i32>,
-    pub ti: Option<i32>,
-    pub fe: Option<i32>,
-    pub si: Option<i32>,
-}
+
+
+
 
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
@@ -180,6 +144,9 @@ impl Database {
     ) {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
+        
+        // Optional: Get previous values to populate history if desired
+        // For now, focus on updating the main record
         let _ = conn.execute(
             "INSERT INTO users (userId, displayName, lastBio, pronouns, trustLevel, updatedAt)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -191,6 +158,37 @@ impl Database {
                 updatedAt = excluded.updatedAt",
             params![user_id, display_name, bio, pronouns, trust_level, now],
         );
+    }
+
+    pub fn get_user_bio(&self, user_id: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT lastBio FROM users WHERE userId = ?1",
+            params![user_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    pub fn update_bio_history(&self, user_id: &str, display_name: &str, bio: &str) {
+        let conn = self.conn.lock().unwrap();
+        let previous_bio: Option<String> = conn
+            .query_row(
+                "SELECT lastBio FROM users WHERE userId = ?1",
+                params![user_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        if previous_bio.as_deref() != Some(bio) {
+            let _ = conn.execute(
+                "INSERT INTO bio_history (userId, displayName, bio, previousBio)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![user_id, display_name, bio, previous_bio],
+            );
+        }
     }
 
     pub fn start_visit(&self, user_id: &str, world_name: &str, instance_id: &str, joined_at: &str) {
@@ -211,6 +209,25 @@ impl Database {
             "UPDATE visits SET leftAt = ?1 WHERE userId = ?2 AND leftAt IS NULL",
             params![left_at, user_id],
         );
+    }
+
+    pub fn get_active_players_without_bio(&self, since_timestamp: &str) -> Vec<(String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT v.userId, u.displayName 
+                 FROM visits v
+                 JOIN users u ON v.userId = u.userId
+                 WHERE v.leftAt IS NULL 
+                 AND v.joinedAt >= ?1
+                 AND (u.lastBio IS NULL OR u.lastBio = '')
+                 AND (u.updatedAt IS NULL OR u.updatedAt < datetime('now', '-2 hours'))",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(params![since_timestamp], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap();
+        rows.filter_map(|r| r.ok()).collect()
     }
 
     pub fn get_active_players(&self) -> Vec<ActivePlayer> {
@@ -242,71 +259,26 @@ impl Database {
         .collect()
     }
 
-    pub fn get_all_users_with_personality(&self) -> Vec<UserWithPersonality> {
+    pub fn get_all_users(&self) -> Vec<User> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare(
-                "SELECT u.userId, u.displayName, u.trustLevel, u.lastBio, u.pronouns, u.updatedAt,
-                        p.mbtiType, p.ni, p.te, p.fi, p.se, p.ne, p.ti, p.fe, p.si
-                 FROM users u
-                 LEFT JOIN personalities p ON u.userId = p.userId",
-            )
+            .prepare("SELECT userId, displayName, lastBio, pronouns, trustLevel, updatedAt FROM users")
             .unwrap();
-
-        stmt.query_map([], |row| {
-            Ok(UserWithPersonality {
-                user_id: row.get(0)?,
-                display_name: row.get(1)?,
-                trust_level: row.get(2)?,
-                last_bio: row.get(3)?,
-                pronouns: row.get(4)?,
-                updated_at: row.get(5)?,
-                mbti_type: row.get(6)?,
-                ni: row.get(7)?,
-                te: row.get(8)?,
-                fi: row.get(9)?,
-                se: row.get(10)?,
-                ne: row.get(11)?,
-                ti: row.get(12)?,
-                fe: row.get(13)?,
-                si: row.get(14)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(User {
+                    user_id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    last_bio: row.get(2)?,
+                    pronouns: row.get(3)?,
+                    trust_level: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
             })
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect()
+            .unwrap();
+        rows.filter_map(|r| r.ok()).collect()
     }
 
-    pub fn update_personality(&self, data: &PersonalityData) {
-        let conn = self.conn.lock().unwrap();
-        let _ = conn.execute(
-            "INSERT INTO personalities (userId, mbtiType, ni, te, fi, se, ne, ti, fe, si, updatedAt)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))
-             ON CONFLICT(userId) DO UPDATE SET
-                mbtiType = excluded.mbtiType,
-                ni = excluded.ni,
-                te = excluded.te,
-                fi = excluded.fi,
-                se = excluded.se,
-                ne = excluded.ne,
-                ti = excluded.ti,
-                fe = excluded.fe,
-                si = excluded.si,
-                updatedAt = excluded.updatedAt",
-            params![
-                data.user_id,
-                data.mbti_type,
-                data.ni.unwrap_or(0),
-                data.te.unwrap_or(0),
-                data.fi.unwrap_or(0),
-                data.se.unwrap_or(0),
-                data.ne.unwrap_or(0),
-                data.ti.unwrap_or(0),
-                data.fe.unwrap_or(0),
-                data.si.unwrap_or(0),
-            ],
-        );
-    }
 
     pub fn save_cookie(&self, key: &str, value: &str) {
         let conn = self.conn.lock().unwrap();

@@ -13,6 +13,6 @@ RUN rustup target add x86_64-pc-windows-gnu
 
 WORKDIR /app
 
-# 默认命令：构建项目并将可执行文件复制到挂载的目录  docker compose run --rm builder
+# 默认命令：构建项目并将可执行文件复制到 test 目录
 # 使用 --release 以获得最佳性能，并剥离符号以减小体积
-CMD ["cargo", "build", "--release", "--target", "x86_64-pc-windows-gnu"]
+CMD ["sh", "-c", "cargo build --release --target x86_64-pc-windows-gnu && mkdir -p test && cp target/x86_64-pc-windows-gnu/release/vrmemoir.exe ./test/vrmemoir.exe"]

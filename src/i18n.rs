@@ -133,6 +133,47 @@ pub static TRANSLATIONS: Lazy<HashMap<Language, TranslationMap>> = Lazy::new(|| 
     en.insert("logout_success", "Logged out and cleared cookies.");
     en.insert("new_log_file", "New log file detected: {}");
     en.insert("watching_directory", "Log watcher started, monitoring directory: {}");
+    en.insert("env_not_found", ".env file not found. Creating a new one from {}...");
+    en.insert("env_created", "Created .env file. Please open it and configure your settings.");
+    en.insert("env_creation_failed", "Failed to create .env file: {}");
+    en.insert("env_template", r#"# Required for API access
+VRC_COOKIE="auth=authcookie_xxx..."
+
+# Optional: For automatic re-login if cookie expires (VRCX style)
+VRC_USERNAME=
+VRC_PASSWORD=
+
+# Optional: SOCKS5 Proxy support (format: ip:port or user:pass@ip:port)
+VRC_PROXY=
+
+# Optional: Record microphone input mixed with VRChat audio (true/false, default: false)
+RECORD_MIC=
+
+# Optional: Specify mic device name (leave empty to use VRChat setting or system default)
+MIC_DEVICE=
+"#);
+    en.insert("bio_fetch_started", "Background worker for User BIOs started (Max 30/min)");
+    en.insert("bio_rate_limit_wait", "Rate limit reached for BIO fetching. Queuing request for {}...");
+    en.insert("bio_saved", "Saved BIO for user: {}");
+    en.insert("bio_symlink_success", "Created BIO symlink in {} for user: {}");
+    en.insert("bio_symlink_failed", "Failed to create symlink, copied BIO instead for user: {}");
+    en.insert("bio_fetch_failed", "Failed to fetch BIO for user: {} - {}");
+    en.insert("bio_queue_skipped_no_login", "Skipped fetching BIO for {} (Not logged in via API)");
+    en.insert("user_info_title", "# Player Info");
+    en.insert("user_info_groups_title", "# Groups");
+    en.insert("user_id", "User ID");
+    en.insert("display_name", "Name");
+    en.insert("date_joined", "Registration Date");
+    en.insert("current_avatar_image_url", "Avatar Image");
+    en.insert("bio_links", "Bio Links");
+    en.insert("bio", "Bio");
+    en.insert("badges", "Badges");
+    en.insert("age_verification_status", "Age Verification Status");
+    en.insert("age_verified", "Age Verified");
+    en.insert("group_id", "Group ID");
+    en.insert("description", "Description");
+    en.insert("no_data", "None");
+    
     m.insert(Language::En, en);
 
     // Chinese
@@ -236,6 +277,47 @@ pub static TRANSLATIONS: Lazy<HashMap<Language, TranslationMap>> = Lazy::new(|| 
     zh.insert("logout_success", "已登出并清除 Cookie。");
     zh.insert("new_log_file", "检测到新日志文件: {}");
     zh.insert("watching_directory", "日志监控已启动，正在监控目录: {}");
+    zh.insert("env_not_found", "未找到 .env 文件。正在从 {} 创建新文件...");
+    zh.insert("env_created", "已创建 .env 文件。请打开并配置您的设置（如 Cookie 等）。");
+    zh.insert("env_creation_failed", "创建 .env 文件失败: {}");
+    zh.insert("env_template", r#"# 访问 API 所需（必填）
+VRC_COOKIE="auth=authcookie_xxx..."
+
+# 可选：如果 Cookie 过期，用于自动重新登录（类似 VRCX 风格）
+VRC_USERNAME=
+VRC_PASSWORD=
+
+# 可选：SOCKS5 代理支持（格式：ip:port 或 user:pass@ip:port）
+VRC_PROXY=
+
+# 可选：录制麦克风输入并混合 VRChat 音频（true/false，默认：false）
+RECORD_MIC=
+
+# 可选：指定麦克风设备名称（留空则使用 VRChat 设置或系统默认设备）
+MIC_DEVICE=
+"#);
+    zh.insert("bio_fetch_started", "用户 BIO 获取后台任务已启动 (限速 30次/分钟)");
+    zh.insert("bio_rate_limit_wait", "达到 BIO 获取速率限制。正在排队请求 {}...");
+    zh.insert("bio_saved", "已保存用户 BIO: {}");
+    zh.insert("bio_symlink_success", "在 {} 中为用户 {} 创建了 BIO 软链接");
+    zh.insert("bio_symlink_failed", "创建软链接失败，已直接复制 BIO 给用户: {}");
+    zh.insert("bio_fetch_failed", "获取用户 {} 的 BIO 失败: {}");
+    zh.insert("bio_queue_skipped_no_login", "跳过获取 {} 的 BIO (未通过 API 登录)");
+    zh.insert("user_info_title", "# 玩家信息");
+    zh.insert("user_info_groups_title", "# 群组 (Groups)");
+    zh.insert("user_id", "用户 ID");
+    zh.insert("display_name", "名称");
+    zh.insert("date_joined", "注册日期");
+    zh.insert("current_avatar_image_url", "当前模型图片");
+    zh.insert("bio_links", "简介链接");
+    zh.insert("bio", "个人简介");
+    zh.insert("badges", "展示徽章");
+    zh.insert("age_verification_status", "年龄验证状态");
+    zh.insert("age_verified", "已通过年龄验证");
+    zh.insert("group_id", "Group ID");
+    zh.insert("description", "Description");
+    zh.insert("no_data", "无");
+
     m.insert(Language::Zh, zh);
 
     // Japanese
@@ -339,6 +421,33 @@ pub static TRANSLATIONS: Lazy<HashMap<Language, TranslationMap>> = Lazy::new(|| 
     ja.insert("logout_success", "ログアウトし、Cookieをクリアしました。");
     ja.insert("new_log_file", "新しいログファイルを検出しました: {}");
     ja.insert("watching_directory", "ログ監視を開始しました。監視ディレクトリ: {}");
+    ja.insert("env_not_found", ".envファイルが見つかりません。{}から新しく作成しています...");
+    ja.insert("env_created", ".envファイルを作成しました。設定（Cookieなど）を確認して構成してください。");
+    ja.insert("env_creation_failed", ".envファイルの作成に失敗しました: {}");
+    ja.insert("env_template", r#"# APIアクセスに必要（必須）
+VRC_COOKIE="auth=authcookie_xxx..."
+
+# オプション：Cookieの有効期限が切れた場合の自動再ログイン用（VRCXスタイル）
+VRC_USERNAME=
+VRC_PASSWORD=
+
+# オプション：SOCKS5プロキシサポート（形式：ip:port または user:pass@ip:port）
+VRC_PROXY=
+
+# オプション：マイク入力をVRChatの音声とミックスして録音する（true/false、デフォルト：false）
+RECORD_MIC=
+
+# オプション：マイクデバイス名を指定（空白の場合はVRChatの設定またはシステムのデフォルトを使用）
+MIC_DEVICE=
+"#);
+    ja.insert("bio_fetch_started", "ユーザーBIO取得のバックグラウンドタスクが開始されました (最大 30回/分)");
+    ja.insert("bio_rate_limit_wait", "BIO取得のレート制限に達しました。{} のリクエストをキューに入れています...");
+    ja.insert("bio_saved", "ユーザーBIOを保存しました: {}");
+    ja.insert("bio_symlink_success", "{} にユーザー {} のBIOシンボリックリンクを作成しました");
+    ja.insert("bio_symlink_failed", "シンボリックリンクの作成に失敗したため、ユーザー {} のBIOをコピーしました");
+    ja.insert("bio_fetch_failed", "ユーザー {} のBIO取得に失敗しました: {}");
+    ja.insert("bio_queue_skipped_no_login", "{} のBIO取得をスキップしました (API経由でログインしていません)");
+
     m.insert(Language::Ja, ja);
 
     // Korean
@@ -439,6 +548,33 @@ pub static TRANSLATIONS: Lazy<HashMap<Language, TranslationMap>> = Lazy::new(|| 
     ko.insert("logout_success", "로그아웃하고 쿠키를 삭제했습니다.");
     ko.insert("new_log_file", "새 로그 파일 감지됨: {}");
     ko.insert("watching_directory", "로그 감시가 시작되었습니다. 모니터링 디렉터리: {}");
+    ko.insert("env_not_found", ".env 파일을 찾을 수 없습니다. {}에서 새 파일을 생성하는 중...");
+    ko.insert("env_created", ".env 파일이 생성되었습니다. 열어서 설정을 구성해 주세요.");
+    ko.insert("env_creation_failed", ".env 파일 생성 실패: {}");
+    ko.insert("env_template", r#"# API 접근을 위해 필요 (필수)
+VRC_COOKIE="auth=authcookie_xxx..."
+
+# 선택: 쿠키 만료 시 자동 재로그인용 (VRCX 스타일)
+VRC_USERNAME=
+VRC_PASSWORD=
+
+# 선택: SOCKS5 프록시 지원 (형식: ip:port 또는 user:pass@ip:port)
+VRC_PROXY=
+
+# 선택: VRChat 오디오와 마이크 입력 혼합 녹음 (true/false, 기본값: false)
+RECORD_MIC=
+
+# 선택: 마이크 장치 이름 지정 (빈칸 시 VRChat 설정 또는 시스템 기본값 사용)
+MIC_DEVICE=
+"#);
+    ko.insert("bio_fetch_started", "사용자 BIO 가져오기 백그라운드 작업이 시작되었습니다 (최대 30회/분)");
+    ko.insert("bio_rate_limit_wait", "BIO 가져오기 속도 제한에 도달했습니다. {}의 요청을 대기열에 추가하는 중...");
+    ko.insert("bio_saved", "사용자 BIO 저장됨: {}");
+    ko.insert("bio_symlink_success", "{}에 사용자 {}의 BIO 심볼릭 링크를 생성했습니다");
+    ko.insert("bio_symlink_failed", "심볼릭 링크 생성 실패, 사용자 {}의 BIO를 복사했습니다");
+    ko.insert("bio_fetch_failed", "사용자 {}의 BIO 가져오기 실패: {}");
+    ko.insert("bio_queue_skipped_no_login", "{} BIO 가져오기 건너뜀 (API를 통한 로그인 안 됨)");
+
     m.insert(Language::Ko, ko);
 
     m
@@ -447,13 +583,13 @@ pub static TRANSLATIONS: Lazy<HashMap<Language, TranslationMap>> = Lazy::new(|| 
 pub fn get_translation(key: &str) -> String {
     let lang = *CURRENT_LANG;
     if let Some(map) = TRANSLATIONS.get(&lang) {
-        if let Some(t) = map.get(key) {
+        if let Some(&t) = map.get(key) {
             return t.to_string();
         }
     }
     // Fallback to English
     if let Some(map) = TRANSLATIONS.get(&Language::En) {
-        if let Some(t) = map.get(key) {
+        if let Some(&t) = map.get(key) {
             return t.to_string();
         }
     }

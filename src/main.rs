@@ -1,4 +1,5 @@
 mod api;
+mod bio;
 mod db;
 mod fsm;
 mod i18n;
@@ -29,6 +30,27 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("."));
 
     let env_path = exe_dir.join(".env");
+    if !env_path.exists() {
+        let example_path = exe_dir.join(".env.example");
+        if example_path.exists() {
+            info!("{}", t!("env_not_found", ".env.example"));
+            if let Err(e) = std::fs::copy(&example_path, &env_path) {
+                error!("{}", t!("env_creation_failed", e));
+            } else {
+                info!("{}", t!("env_created"));
+            }
+        } else {
+            // If .env.example is also missing, create a basic one
+            info!("{}", t!("env_not_found", "default template"));
+            let default_env = format!("{}", t!("env_template"));
+            if let Err(e) = std::fs::write(&env_path, default_env) {
+                error!("{}", t!("env_creation_failed", e));
+            } else {
+                info!("{}", t!("env_created"));
+            }
+        }
+    }
+
     if env_path.exists() {
         dotenvy::from_path(&env_path).ok();
     } else {
@@ -105,6 +127,8 @@ async fn main() -> Result<()> {
             auth_result.message.as_deref().unwrap_or("Please login via API"))),
     }
 
+
+
     // Keep-alive task (every 5 minutes)
     let api_keepalive = api.clone();
     tokio::spawn(async move {
@@ -150,10 +174,18 @@ async fn main() -> Result<()> {
     let log_watcher = LogWatcher::new();
     let mut rx = log_watcher.start().await?;
 
+    // Initialize BIO Manager
+    let bio_manager = Arc::new(crate::bio::BioManager::new(api.clone(), db.clone()));
+
     // 创建有限状态机 (FSM)
     let mic_config_shared = Arc::new(mic_config);
     let fsm = Arc::new(tokio::sync::Mutex::new(
-        AppFsm::new(db.clone(), mic_config_shared, exe_dir.clone()),
+        AppFsm::new(
+            db.clone(), 
+            bio_manager.clone(),
+            mic_config_shared, 
+            exe_dir.clone(),
+        ),
     ));
 
     // 事件处理循环 — 所有状态转换由 FSM 统一管理
@@ -176,10 +208,12 @@ async fn main() -> Result<()> {
         }
     });
 
+
     // Start HTTP server
     let app_state = Arc::new(AppState {
         db: db.clone(),
         api: api.clone(),
+        bio: bio_manager.clone(),
     });
 
     let router = server::create_router(app_state);

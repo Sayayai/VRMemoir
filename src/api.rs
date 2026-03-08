@@ -196,8 +196,14 @@ impl VRChatAPI {
             if self.username.is_some() && self.password.is_some() {
                 let can_attempt = {
                     let mut attempts = self.auto_login_attempts.lock().await;
-                    let one_hour_ago = std::time::Instant::now() - std::time::Duration::from_secs(3600);
-                    attempts.retain(|t| *t > one_hour_ago);
+                    let one_hour_ago = std::time::Instant::now()
+                        .checked_sub(std::time::Duration::from_secs(3600));
+
+                    if let Some(time) = one_hour_ago {
+                        attempts.retain(|t| *t > time);
+                    } else {
+                        // System uptime is less than an hour, keep all attempts
+                    }
                     if attempts.len() >= MAX_AUTO_LOGIN_PER_HOUR {
                         false
                     } else {
@@ -621,6 +627,10 @@ impl VRChatAPI {
 
     pub async fn get_user_info(&self, user_id: &str) -> Result<Value> {
         self.request(&format!("users/{}", user_id), "GET", None).await
+    }
+
+    pub async fn get_user_groups(&self, user_id: &str) -> Result<Value> {
+        self.request(&format!("users/{}/groups", user_id), "GET", None).await
     }
 
     pub async fn keep_alive(&self) {
