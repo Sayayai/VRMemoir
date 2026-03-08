@@ -17,7 +17,7 @@ use tracing::{error, info};
 use crate::api::VRChatAPI;
 use crate::db::Database;
 use crate::fsm::AppFsm;
-use crate::recorder::{MicConfig, read_vrchat_mic_device};
+use crate::recorder::{read_vrchat_mic_device, MicConfig};
 use crate::server::AppState;
 use crate::watcher::LogWatcher;
 
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
         } else {
             // If .env.example is also missing, create a basic one
             info!("{}", t!("env_not_found", "default template"));
-            let default_env = format!("{}", t!("env_template"));
+            let default_env = t!("env_template").to_string();
             if let Err(e) = std::fs::write(&env_path, default_env) {
                 error!("{}", t!("env_creation_failed", e));
             } else {
@@ -78,10 +78,13 @@ async fn main() -> Result<()> {
         api::LoginStatus::Success => info!("{}", t!("auth_success")),
         api::LoginStatus::TwoFactor => {
             // Interactive 2FA prompt at startup
-            let tfa_methods = auth_result.requires_two_factor_auth.as_deref().unwrap_or(&[]);
+            let tfa_methods = auth_result
+                .requires_two_factor_auth
+                .as_deref()
+                .unwrap_or(&[]);
             let method_str = tfa_methods.join(", ");
             println!("\n{}", t!("tfa_required", method_str));
-            
+
             let stdin_2fa = BufReader::new(tokio::io::stdin());
             let mut lines_2fa = stdin_2fa.lines();
 
@@ -113,8 +116,13 @@ async fn main() -> Result<()> {
                             break;
                         }
                         _ => {
-                            println!("{}", t!("tfa_failed", 
-                                tfa_result.message.as_deref().unwrap_or("unknown error")));
+                            println!(
+                                "{}",
+                                t!(
+                                    "tfa_failed",
+                                    tfa_result.message.as_deref().unwrap_or("unknown error")
+                                )
+                            );
                             println!("{}", t!("tfa_retry"));
                         }
                     }
@@ -123,11 +131,17 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        api::LoginStatus::Failed => info!("{}", t!("auth_failed",
-            auth_result.message.as_deref().unwrap_or("Please login via API"))),
+        api::LoginStatus::Failed => info!(
+            "{}",
+            t!(
+                "auth_failed",
+                auth_result
+                    .message
+                    .as_deref()
+                    .unwrap_or("Please login via API")
+            )
+        ),
     }
-
-
 
     // Keep-alive task (every 5 minutes)
     let api_keepalive = api.clone();
@@ -144,7 +158,9 @@ async fn main() -> Result<()> {
     let record_mic = std::env::var("RECORD_MIC")
         .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
         .unwrap_or(false);
-    let mic_device_env = std::env::var("MIC_DEVICE").ok().filter(|s| !s.trim().is_empty());
+    let mic_device_env = std::env::var("MIC_DEVICE")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
 
     let mic_device_name = if record_mic {
         // Priority: env var > VRChat registry > system default (None)
@@ -168,7 +184,17 @@ async fn main() -> Result<()> {
         enabled: record_mic,
         device_name: mic_device_name,
     };
-    info!("{}", t!("mic_recording_status", if record_mic { t!("enabled") } else { t!("disabled") }));
+    info!(
+        "{}",
+        t!(
+            "mic_recording_status",
+            if record_mic {
+                t!("enabled")
+            } else {
+                t!("disabled")
+            }
+        )
+    );
 
     // Start log watcher
     let log_watcher = LogWatcher::new();
@@ -179,14 +205,12 @@ async fn main() -> Result<()> {
 
     // 创建有限状态机 (FSM)
     let mic_config_shared = Arc::new(mic_config);
-    let fsm = Arc::new(tokio::sync::Mutex::new(
-        AppFsm::new(
-            db.clone(), 
-            bio_manager.clone(),
-            mic_config_shared, 
-            exe_dir.clone(),
-        ),
-    ));
+    let fsm = Arc::new(tokio::sync::Mutex::new(AppFsm::new(
+        db.clone(),
+        bio_manager.clone(),
+        mic_config_shared,
+        exe_dir.clone(),
+    )));
 
     // 事件处理循环 — 所有状态转换由 FSM 统一管理
     let fsm_for_events = fsm.clone();
@@ -207,7 +231,6 @@ async fn main() -> Result<()> {
             fsm.check_process_alive();
         }
     });
-
 
     // Start HTTP server
     let app_state = Arc::new(AppState {

@@ -42,16 +42,19 @@ pub struct RecordingSession {
 impl RecordingSession {
     /// Start a new recording session.
     /// Creates the output directory, writes the initial timeline header, and starts audio recording.
-    pub fn start(base_dir: &Path, world_name: &str, instance_id: &str, mic_config: MicConfig, pid: u32) -> Result<Self> {
+    pub fn start(
+        base_dir: &Path,
+        world_name: &str,
+        instance_id: &str,
+        mic_config: MicConfig,
+        pid: u32,
+    ) -> Result<Self> {
         let now = Local::now();
 
         // Build directory: base_dir/recordings/YYYY-MM/MMdd_HH-mm WorldName
         let safe_name = sanitize_filename(world_name);
         let month_dir = now.format("%Y-%m").to_string();
-        let folder_name = format!("{} {}",
-            now.format("%m%d_%H-%M"),
-            safe_name,
-        );
+        let folder_name = format!("{} {}", now.format("%m%d_%H-%M"), safe_name,);
 
         let output_dir = base_dir
             .join("recordings")
@@ -69,13 +72,24 @@ impl RecordingSession {
             writeln!(f, "\n{}\n", t!("timeline_title", world_name))?;
             writeln!(f, "- **{}**: {}", t!("world_name_label"), world_name)?;
             writeln!(f, "- **{}**: {}", t!("instance_id_label"), instance_id)?;
-            writeln!(f, "- **{}**: {}", t!("recording_start_label"), now.format("%Y-%m-%d %H:%M:%S"))?;
+            writeln!(
+                f,
+                "- **{}**: {}",
+                t!("recording_start_label"),
+                now.format("%Y-%m-%d %H:%M:%S")
+            )?;
             writeln!(f, "- **{}**", t!("recording_status_active"))?;
             writeln!(f, "\n---\n")?;
             writeln!(f, "{}\n", t!("player_timeline_title"))?;
-            writeln!(f, "| {} | {} | {} | {} | {} |", 
-                t!("table_header_time"), t!("table_header_offset"), t!("table_header_event"), 
-                t!("table_header_player"), t!("table_header_uid"))?;
+            writeln!(
+                f,
+                "| {} | {} | {} | {} | {} |",
+                t!("table_header_time"),
+                t!("table_header_offset"),
+                t!("table_header_event"),
+                t!("table_header_player"),
+                t!("table_header_uid")
+            )?;
             writeln!(f, "| :--- | :--- | :--- | :--- | :--- |")?;
         }
         info!("{}", t!("timeline_header_written", timeline_path.display()));
@@ -140,9 +154,7 @@ impl RecordingSession {
 
     /// Append a single event row to the timeline.md file
     fn append_event_to_file(&self, event: &PlayerEvent) -> Result<()> {
-        let mut f = OpenOptions::new()
-            .append(true)
-            .open(&self.timeline_path)?;
+        let mut f = OpenOptions::new().append(true).open(&self.timeline_path)?;
 
         let time_str = event.time.format("%H:%M:%S").to_string();
         let offset = (event.time - self.start_time)
@@ -161,8 +173,11 @@ impl RecordingSession {
             .map(|id| format!("`{}`", id))
             .unwrap_or_else(|| "-".to_string());
 
-        writeln!(f, "| {} | {} | {} | {} | {} |",
-            time_str, offset_str, event_icon, event.display_name, uid)?;
+        writeln!(
+            f,
+            "| {} | {} | {} | {} | {} |",
+            time_str, offset_str, event_icon, event.display_name, uid
+        )?;
 
         Ok(())
     }
@@ -191,8 +206,12 @@ impl RecordingSession {
 
         // Rename folder to include duration
         let duration_str = format_duration(&total_duration);
-        let current_name = self.output_dir.file_name()
-            .unwrap_or_default().to_string_lossy().to_string();
+        let current_name = self
+            .output_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let new_name = format!("{} {}", current_name, duration_str);
         let new_dir = self.output_dir.with_file_name(&new_name);
 
@@ -206,7 +225,8 @@ impl RecordingSession {
         // Rename audio.ogg to detailed filename
         if has_audio {
             let safe_name = sanitize_filename(&self.world_name);
-            let audio_new_name = format!("{}_{}_{}_{}.ogg",
+            let audio_new_name = format!(
+                "{}_{}_{}_{}.ogg",
                 self.start_time.format("%m%d"),
                 self.start_time.format("%H-%M"),
                 safe_name,
@@ -226,7 +246,13 @@ impl RecordingSession {
         std::fs::write(&self.timeline_path, &content)?;
 
         info!(
-            "{}", t!("session_saved", self.output_dir.display(), total_duration.as_secs_f64(), self.events.len())
+            "{}",
+            t!(
+                "session_saved",
+                self.output_dir.display(),
+                total_duration.as_secs_f64(),
+                self.events.len()
+            )
         );
 
         Ok(self.output_dir.clone())
@@ -246,8 +272,16 @@ impl RecordingSession {
 
         // Header
         md.push_str(&format!("{}\n\n", t!("timeline_title", self.world_name)));
-        md.push_str(&format!("- **{}**: {}\n", t!("world_name_label"), self.world_name));
-        md.push_str(&format!("- **{}**: {}\n", t!("instance_id_label"), self.instance_id));
+        md.push_str(&format!(
+            "- **{}**: {}\n",
+            t!("world_name_label"),
+            self.world_name
+        ));
+        md.push_str(&format!(
+            "- **{}**: {}\n",
+            t!("instance_id_label"),
+            self.instance_id
+        ));
         md.push_str(&format!(
             "- **{}**: {}\n",
             t!("recording_start_label"),
@@ -258,13 +292,24 @@ impl RecordingSession {
             t!("recording_end_label"),
             end_time.format("%Y-%m-%d %H:%M:%S")
         ));
-        md.push_str(&format!("- **{}**: {} {} {} {}\n", t!("recording_duration_label"), mins, t!("mins_label"), secs, t!("secs_label")));
+        md.push_str(&format!(
+            "- **{}**: {} {} {} {}\n",
+            t!("recording_duration_label"),
+            mins,
+            t!("mins_label"),
+            secs,
+            t!("secs_label")
+        ));
 
         if has_audio {
             let fname = self.audio_filename.as_deref().unwrap_or("audio.ogg");
             md.push_str(&format!("- **{}**: {}\n", t!("audio_file_label"), fname));
         } else {
-            md.push_str(&format!("- **{}**: {}\n", t!("audio_file_label"), t!("no_audio_recorded")));
+            md.push_str(&format!(
+                "- **{}**: {}\n",
+                t!("audio_file_label"),
+                t!("no_audio_recorded")
+            ));
         }
 
         md.push_str("\n---\n\n");
@@ -275,9 +320,14 @@ impl RecordingSession {
         if self.events.is_empty() {
             md.push_str(&format!("{}\n", t!("no_player_events")));
         } else {
-            md.push_str(&format!("| {} | {} | {} | {} | {} |\n", 
-                t!("table_header_time"), t!("table_header_offset"), t!("table_header_event"), 
-                t!("table_header_player"), t!("table_header_uid")));
+            md.push_str(&format!(
+                "| {} | {} | {} | {} | {} |\n",
+                t!("table_header_time"),
+                t!("table_header_offset"),
+                t!("table_header_event"),
+                t!("table_header_player"),
+                t!("table_header_uid")
+            ));
             md.push_str("| ------ | ------ | ------ | --------- | -------- |\n");
 
             for event in &self.events {
@@ -286,7 +336,8 @@ impl RecordingSession {
                 let offset = (event.time - self.start_time)
                     .to_std()
                     .unwrap_or(Duration::from_secs(0));
-                let offset_str = format!("{:02}:{:02}", offset.as_secs() / 60, offset.as_secs() % 60);
+                let offset_str =
+                    format!("{:02}:{:02}", offset.as_secs() / 60, offset.as_secs() % 60);
 
                 let event_icon = match event.event_type {
                     PlayerEventType::Joined => t!("event_joined"),

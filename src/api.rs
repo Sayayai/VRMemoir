@@ -137,12 +137,20 @@ impl VRChatAPI {
         let mut headers = HeaderMap::new();
         let cookie = self.cookie.lock().await;
         if !cookie.is_empty() {
-            headers.insert(COOKIE, HeaderValue::from_str(&cookie).unwrap_or(HeaderValue::from_static("")));
+            headers.insert(
+                COOKIE,
+                HeaderValue::from_str(&cookie).unwrap_or(HeaderValue::from_static("")),
+            );
         }
         headers
     }
 
-    pub async fn request(&self, endpoint: &str, method: &str, body: Option<Value>) -> Result<Value> {
+    pub async fn request(
+        &self,
+        endpoint: &str,
+        method: &str,
+        body: Option<Value>,
+    ) -> Result<Value> {
         let url = format!("{}/{}", API_BASE, endpoint);
 
         // Check if this endpoint recently failed
@@ -196,8 +204,8 @@ impl VRChatAPI {
             if self.username.is_some() && self.password.is_some() {
                 let can_attempt = {
                     let mut attempts = self.auto_login_attempts.lock().await;
-                    let one_hour_ago = std::time::Instant::now()
-                        .checked_sub(std::time::Duration::from_secs(3600));
+                    let one_hour_ago =
+                        std::time::Instant::now().checked_sub(std::time::Duration::from_secs(3600));
 
                     if let Some(time) = one_hour_ago {
                         attempts.retain(|t| *t > time);
@@ -291,11 +299,7 @@ impl VRChatAPI {
         }
         self.db.clear_cookies();
 
-        let encoded = format!(
-            "{}:{}",
-            urlencoding::encode(&u),
-            urlencoding::encode(&p)
-        );
+        let encoded = format!("{}:{}", urlencoding::encode(&u), urlencoding::encode(&p));
         let auth = base64::engine::general_purpose::STANDARD.encode(encoded.as_bytes());
 
         let url = format!("{}/auth/user", API_BASE);
@@ -433,7 +437,11 @@ impl VRChatAPI {
 
         let data: Value = response.json().await.unwrap_or(Value::Null);
 
-        if data.get("verified").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if data
+            .get("verified")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             info!("{}", t!("tfa_success"));
 
             // Fetch full user after 2FA
@@ -577,17 +585,24 @@ impl VRChatAPI {
         let auth_result = self.check_auth().await;
         match &auth_result.status {
             LoginStatus::Success => {
-                let name = auth_result.user.as_ref()
+                let name = auth_result
+                    .user
+                    .as_ref()
                     .and_then(|u| u.get("displayName"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("未知");
                 info!("{}", t!("current_user", name));
-                
+
                 // 使用 get_user_info 满足未使用的代码检查，并验证接口可用性
-                if let Some(id) = auth_result.user.as_ref().and_then(|u| u.get("id")).and_then(|v| v.as_str()) {
+                if let Some(id) = auth_result
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.get("id"))
+                    .and_then(|v| v.as_str())
+                {
                     let _ = self.get_user_info(id).await;
                 }
-                
+
                 return auth_result;
             }
             LoginStatus::TwoFactor => {
@@ -605,18 +620,31 @@ impl VRChatAPI {
             let login_result = self.login(None, None).await;
             match &login_result.status {
                 LoginStatus::Success => {
-                    let name = login_result.user.as_ref()
+                    let name = login_result
+                        .user
+                        .as_ref()
                         .and_then(|u| u.get("displayName"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("未知");
                     info!("{}", t!("login_success", name));
-                    
-                    if let Some(id) = login_result.user.as_ref().and_then(|u| u.get("id")).and_then(|v| v.as_str()) {
+
+                    if let Some(id) = login_result
+                        .user
+                        .as_ref()
+                        .and_then(|u| u.get("id"))
+                        .and_then(|v| v.as_str())
+                    {
                         let _ = self.get_user_info(id).await;
                     }
                 }
                 LoginStatus::TwoFactor => info!("{}", t!("login_require_2fa")),
-                LoginStatus::Failed => info!("{}", t!("login_failed", login_result.message.as_deref().unwrap_or("未知原因"))),
+                LoginStatus::Failed => info!(
+                    "{}",
+                    t!(
+                        "login_failed",
+                        login_result.message.as_deref().unwrap_or("未知原因")
+                    )
+                ),
             }
             return login_result;
         }
@@ -626,11 +654,13 @@ impl VRChatAPI {
     }
 
     pub async fn get_user_info(&self, user_id: &str) -> Result<Value> {
-        self.request(&format!("users/{}", user_id), "GET", None).await
+        self.request(&format!("users/{}", user_id), "GET", None)
+            .await
     }
 
     pub async fn get_user_groups(&self, user_id: &str) -> Result<Value> {
-        self.request(&format!("users/{}/groups", user_id), "GET", None).await
+        self.request(&format!("users/{}/groups", user_id), "GET", None)
+            .await
     }
 
     pub async fn keep_alive(&self) {

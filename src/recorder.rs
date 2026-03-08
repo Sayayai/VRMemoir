@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use sysinfo::System;
-use tracing::{error, info};
 #[cfg(windows)]
 use tracing::warn;
+use tracing::{error, info};
 
 use crate::t;
 
@@ -102,7 +102,14 @@ impl AudioRecorder {
             .spawn(move || -> Result<Duration> {
                 match capture_thread(process_id, &output_path, &stop_clone, &mic_config) {
                     Ok(duration) => {
-                        info!("{}", t!("recording_finished", output_path.display(), duration.as_secs_f64()));
+                        info!(
+                            "{}",
+                            t!(
+                                "recording_finished",
+                                output_path.display(),
+                                duration.as_secs_f64()
+                            )
+                        );
                         Ok(duration)
                     }
                     Err(e) => {
@@ -157,7 +164,9 @@ fn capture_thread(
     mic_config: &MicConfig,
 ) -> Result<Duration> {
     // Initialize COM for this thread
-    wasapi::initialize_mta().ok().map_err(|e| anyhow!("COM init failed: {:?}", e))?;
+    wasapi::initialize_mta()
+        .ok()
+        .map_err(|e| anyhow!("COM init failed: {:?}", e))?;
 
     // Set up capture format: 48kHz, 16-bit, stereo (Opus native)
     let sample_rate: usize = 48000;
@@ -181,9 +190,14 @@ fn capture_thread(
     );
 
     // Create process-specific loopback client (VRChat audio)
-    let mut audio_client =
-        wasapi::AudioClient::new_application_loopback_client(process_id, true)
-            .map_err(|e| anyhow!("Failed to create loopback client for PID {}: {:?}", process_id, e))?;
+    let mut audio_client = wasapi::AudioClient::new_application_loopback_client(process_id, true)
+        .map_err(|e| {
+        anyhow!(
+            "Failed to create loopback client for PID {}: {:?}",
+            process_id,
+            e
+        )
+    })?;
 
     // Initialize in shared event mode with autoconvert
     let mode = wasapi::StreamMode::EventsShared {
@@ -237,8 +251,8 @@ fn capture_thread(
     let frame_bytes = opus_frame_size * channels * (bits_per_sample / 8);
 
     // OGG stream writer
-    let mut ogg_file = File::create(output_path)
-        .map_err(|e| anyhow!("Failed to create output file: {:?}", e))?;
+    let mut ogg_file =
+        File::create(output_path).map_err(|e| anyhow!("Failed to create output file: {:?}", e))?;
 
     let serial = rand_serial();
     let mut ogg_stream = ogg::PacketWriter::new(&mut ogg_file);
@@ -258,14 +272,25 @@ fn capture_thread(
         .map_err(|e| anyhow!("Failed to start VRChat stream: {:?}", e))?;
 
     if let Some(ref mc) = mic_capture {
-        mc.client_wrapper.start_stream()
+        mc.client_wrapper
+            .start_stream()
             .map_err(|e| anyhow!("Failed to start mic stream: {:?}", e))?;
     }
 
     let start_time = std::time::Instant::now();
 
-    info!("{}", t!("recording_started", process_id,
-        if mic_capture.is_some() { t!("with_mic") } else { String::new() }));
+    info!(
+        "{}",
+        t!(
+            "recording_started",
+            process_id,
+            if mic_capture.is_some() {
+                t!("with_mic")
+            } else {
+                String::new()
+            }
+        )
+    );
 
     loop {
         if stop_flag.load(Ordering::SeqCst) {
@@ -289,7 +314,8 @@ fn capture_thread(
 
         // Read mic audio (if enabled)
         if let Some(ref mc) = mic_capture {
-            let mic_frames = mc.capture_client
+            let mic_frames = mc
+                .capture_client
                 .get_next_packet_size()
                 .unwrap_or(None)
                 .unwrap_or(0);
@@ -443,15 +469,18 @@ fn setup_mic_capture(
         find_input_device_by_name(&enumerator, device_name)?
     } else {
         // Use default input device
-        enumerator.get_default_device(&wasapi::Direction::Capture)
+        enumerator
+            .get_default_device(&wasapi::Direction::Capture)
             .map_err(|e| anyhow!("Failed to get default input device: {:?}", e))?
     };
 
-    let dev_name = device.get_friendlyname()
+    let dev_name = device
+        .get_friendlyname()
         .unwrap_or_else(|_| t!("unknown_device"));
     info!("{}", t!("using_mic_device", dev_name));
 
-    let mut mic_client = device.get_iaudioclient()
+    let mut mic_client = device
+        .get_iaudioclient()
         .map_err(|e| anyhow!("Failed to get mic AudioClient: {:?}", e))?;
 
     let mode = wasapi::StreamMode::EventsShared {
@@ -480,8 +509,12 @@ fn setup_mic_capture(
 
 /// Find an input device by its friendly name
 #[cfg(windows)]
-fn find_input_device_by_name(enumerator: &wasapi::DeviceEnumerator, name: &str) -> Result<wasapi::Device> {
-    let collection = enumerator.get_device_collection(&wasapi::Direction::Capture)
+fn find_input_device_by_name(
+    enumerator: &wasapi::DeviceEnumerator,
+    name: &str,
+) -> Result<wasapi::Device> {
+    let collection = enumerator
+        .get_device_collection(&wasapi::Direction::Capture)
         .map_err(|e| anyhow!("Failed to enumerate capture devices: {:?}", e))?;
 
     let name_lower = name.to_lowercase();
@@ -516,9 +549,7 @@ fn mix_pcm(a: &[i16], b: &[i16]) -> Vec<i16> {
 #[cfg(windows)]
 fn is_process_alive(pid: u32) -> bool {
     let system = System::new_all();
-    system
-        .process(sysinfo::Pid::from_u32(pid))
-        .is_some()
+    system.process(sysinfo::Pid::from_u32(pid)).is_some()
 }
 
 /// Generate a pseudo-random serial number for OGG stream
@@ -542,21 +573,16 @@ fn write_opus_header(
 ) -> Result<()> {
     // OpusHead packet
     let mut head = Vec::with_capacity(19);
-    head.extend_from_slice(b"OpusHead");          // Magic signature
-    head.push(1);                                 // Version
-    head.push(channels as u8);                    // Channel count
-    head.extend_from_slice(&0u16.to_le_bytes());  // Pre-skip
+    head.extend_from_slice(b"OpusHead"); // Magic signature
+    head.push(1); // Version
+    head.push(channels as u8); // Channel count
+    head.extend_from_slice(&0u16.to_le_bytes()); // Pre-skip
     head.extend_from_slice(&sample_rate.to_le_bytes()); // Input sample rate
-    head.extend_from_slice(&0i16.to_le_bytes());  // Output gain
-    head.push(0);                                 // Channel mapping family
+    head.extend_from_slice(&0i16.to_le_bytes()); // Output gain
+    head.push(0); // Channel mapping family
 
     writer
-        .write_packet(
-            head,
-            serial,
-            ogg::PacketWriteEndInfo::EndPage,
-            0,
-        )
+        .write_packet(head, serial, ogg::PacketWriteEndInfo::EndPage, 0)
         .map_err(|e| anyhow!("Failed to write OpusHead: {:?}", e))?;
 
     // OpusTags packet
@@ -568,12 +594,7 @@ fn write_opus_header(
     tags.extend_from_slice(&0u32.to_le_bytes()); // No user comments
 
     writer
-        .write_packet(
-            tags,
-            serial,
-            ogg::PacketWriteEndInfo::EndPage,
-            0,
-        )
+        .write_packet(tags, serial, ogg::PacketWriteEndInfo::EndPage, 0)
         .map_err(|e| anyhow!("Failed to write OpusTags: {:?}", e))?;
 
     Ok(())

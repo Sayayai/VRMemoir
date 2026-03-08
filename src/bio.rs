@@ -5,9 +5,8 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
-
+use tokio::sync::Mutex;
 
 pub struct BioManager {
     api: Arc<VRChatAPI>,
@@ -49,8 +48,12 @@ impl BioManager {
 
         // 3. Fetch from VRChat API
         let user_data = self.api.get_user_info(user_id).await?;
-        let groups_data = self.api.get_user_groups(user_id).await.unwrap_or(serde_json::Value::Array(vec![]));
-        
+        let groups_data = self
+            .api
+            .get_user_groups(user_id)
+            .await
+            .unwrap_or(serde_json::Value::Array(vec![]));
+
         let mut full_data = user_data.clone();
         if let Some(obj) = full_data.as_object_mut() {
             obj.insert("groups".to_string(), groups_data);
@@ -59,9 +62,10 @@ impl BioManager {
         // 4. Save to Database
         let display_name = full_data["displayName"].as_str().unwrap_or("Unknown");
         let bio = full_data["bio"].as_str().unwrap_or("");
-        
+
         // 4. Update Database (Always update if we fetched it)
-        self.db.register_user(user_id, display_name, Some(bio), None, None);
+        self.db
+            .register_user(user_id, display_name, Some(bio), None, None);
         self.db.update_bio_history(user_id, display_name, bio);
 
         // 5. Generate Markdown in ./bio/
@@ -85,7 +89,9 @@ impl BioManager {
             let mut last_fetch = self.last_global_fetch.lock().await;
             if let Some(last_time) = *last_fetch {
                 if now.duration_since(last_time) < six_seconds {
-                    return Err(anyhow!("Rate limit reached: Minimum 6s between any BIO fetches"));
+                    return Err(anyhow!(
+                        "Rate limit reached: Minimum 6s between any BIO fetches"
+                    ));
                 }
             }
             *last_fetch = Some(now);
@@ -111,19 +117,29 @@ impl BioManager {
             std::fs::create_dir_all(bio_dir)?;
         }
 
-        let display_name_val = user_data.get("displayName").and_then(|v| v.as_str()).unwrap_or("unknown_user");
+        let display_name_val = user_data
+            .get("displayName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown_user");
         let display_name = display_name_val.trim();
         let re = regex::Regex::new(r#"[\\/:*?"<>|]"#)?;
         let display_name_safe = re.replace_all(display_name, "_").to_string();
-        
+
         let mut md_content = Vec::new();
         let _bio_start_line = 1;
         md_content.push(t!("user_info_title"));
         md_content.push("".to_string());
-        
+
         let allowed_keys = vec![
-            "id", "displayName", "date_joined", "currentAvatarImageUrl", 
-            "bioLinks", "bio", "badges", "ageVerificationStatus", "ageVerified"
+            "id",
+            "displayName",
+            "date_joined",
+            "currentAvatarImageUrl",
+            "bioLinks",
+            "bio",
+            "badges",
+            "ageVerificationStatus",
+            "ageVerified",
         ];
         let priority_keys = vec!["displayName", "bio", "bioLinks"];
 
@@ -139,10 +155,16 @@ impl BioManager {
         if let Some(groups) = user_data.get("groups").and_then(|g| g.as_array()) {
             for group in groups {
                 let name = group.get("name").and_then(|v| v.as_str()).unwrap_or("N/A");
-                let group_id = group.get("groupId").and_then(|v| v.as_str()).unwrap_or("N/A");
-                let description = group.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let group_id = group
+                    .get("groupId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("N/A");
+                let description = group
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let formatted_desc = description.replace('\n', "\n> ");
-                
+
                 md_content.push(format!("## {}", name));
                 md_content.push(format!("- **{}**: `{}`", t!("group_id"), group_id));
                 md_content.push(format!("- **{}**:", t!("description")));
@@ -155,9 +177,11 @@ impl BioManager {
         let groups_end_line = md_content.len();
 
         let current_date = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let file_name = format!("{}_{}_L{}-L{}_BIO_L{}-L{}_GROUPS.md", 
-            current_date, display_name_safe, 1, bio_end_line, groups_start_line, groups_end_line);
-        
+        let file_name = format!(
+            "{}_{}_L{}-L{}_BIO_L{}-L{}_GROUPS.md",
+            current_date, display_name_safe, 1, bio_end_line, groups_start_line, groups_end_line
+        );
+
         let file_path = bio_dir.join(&file_name);
         let new_content = md_content.join("\n");
 
@@ -171,11 +195,17 @@ impl BioManager {
         }
 
         std::fs::write(&file_path, new_content)?;
-        
+
         Ok(file_path)
     }
 
-    fn generate_md_body(&self, user_data: &serde_json::Value, allowed_keys: &[&str], priority_keys: &[&str], md: &mut Vec<String>) {
+    fn generate_md_body(
+        &self,
+        user_data: &serde_json::Value,
+        allowed_keys: &[&str],
+        priority_keys: &[&str],
+        md: &mut Vec<String>,
+    ) {
         if let Some(obj) = user_data.as_object() {
             for key in priority_keys {
                 if let Some(val) = obj.get(*key) {
@@ -207,9 +237,9 @@ impl BioManager {
             "id" => t!("user_id"),
             _ => key.to_string(),
         };
-        
+
         let mut first_line = format!("**{}**: ", translated_key);
-        
+
         match value {
             serde_json::Value::Array(arr) => {
                 if arr.is_empty() {
@@ -221,11 +251,18 @@ impl BioManager {
                     md.push("".to_string());
                     for item in arr {
                         if let serde_json::Value::Object(obj) = item {
-                            if let Some(badge_name) = obj.get("badgeName").and_then(|v| v.as_str()) {
-                                let badge_desc = obj.get("badgeDescription").and_then(|v| v.as_str()).unwrap_or("");
+                            if let Some(badge_name) = obj.get("badgeName").and_then(|v| v.as_str())
+                            {
+                                let badge_desc = obj
+                                    .get("badgeDescription")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
                                 md.push(format!("- **{}**: {}", badge_name, badge_desc));
                             } else {
-                                md.push(format!("- {}", serde_json::to_string(item).unwrap_or_default()));
+                                md.push(format!(
+                                    "- {}",
+                                    serde_json::to_string(item).unwrap_or_default()
+                                ));
                             }
                         } else if let Some(s) = item.as_str() {
                             md.push(format!("- {}", s));
@@ -235,7 +272,7 @@ impl BioManager {
                     }
                     md.push("".to_string());
                 }
-            },
+            }
             serde_json::Value::Object(obj) => {
                 md.push(first_line);
                 md.push("".to_string());
@@ -247,7 +284,7 @@ impl BioManager {
                 }
                 md.push("```".to_string());
                 md.push("".to_string());
-            },
+            }
             serde_json::Value::String(s) => {
                 if key == "bio" {
                     md.push(first_line);
@@ -262,11 +299,11 @@ impl BioManager {
                     md.push(first_line);
                     md.push("".to_string());
                 }
-            },
+            }
             _ => {
                 let s = value.to_string();
                 if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-                    first_line.push_str(&s[1..s.len()-1]);
+                    first_line.push_str(&s[1..s.len() - 1]);
                 } else {
                     first_line.push_str(&s);
                 }
@@ -276,24 +313,32 @@ impl BioManager {
         }
     }
 
-    fn create_symlink(&self, target_path: &Path, session_dir: &Path, display_name: &str) -> Result<()> {
+    fn create_symlink(
+        &self,
+        target_path: &Path,
+        session_dir: &Path,
+        display_name: &str,
+    ) -> Result<()> {
         let abs_target = std::fs::canonicalize(target_path)?;
-        
+
         // Sanitize display name for the link filename
         let re = regex::Regex::new(r#"[\\/:*?"<>|]"#)?;
         let display_name_safe = re.replace_all(display_name.trim(), "_").to_string();
         let link_name = format!("{}_BIO.md", display_name_safe);
         let link_path = session_dir.join(link_name);
-        
+
         // Idempotency: skip if already correct
         if link_path.exists() {
-            if let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(target_path), std::fs::metadata(&link_path)) {
+            if let (Ok(src_meta), Ok(dst_meta)) = (
+                std::fs::metadata(target_path),
+                std::fs::metadata(&link_path),
+            ) {
                 if src_meta.len() == dst_meta.len() {
                     return Ok(());
                 }
             }
         }
-        
+
         #[cfg(windows)]
         {
             if link_path.exists() {
@@ -309,7 +354,7 @@ impl BioManager {
         {
             std::os::unix::fs::symlink(&abs_target, &link_path)?;
         }
-        
+
         Ok(())
     }
 }

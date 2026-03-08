@@ -21,6 +21,14 @@
 - 格式检查：`cargo fmt --all -- --check`
 - 格式化写入：`cargo fmt --all`
 
+## Docker 开发与验证
+
+- 构建 Win64 产物（默认命令）：`docker compose run --rm builder`
+- 容器内格式检查：`docker compose run --rm builder sh -c "cargo fmt --all -- --check"`
+- 容器内 Lint：`docker compose run --rm builder sh -c "cargo clippy --all-targets --all-features -- -D warnings"`
+- 容器内测试：`docker compose run --rm builder sh -c "cargo test"`
+- 容器内完整验证（推荐）：`docker compose run --rm builder sh -c "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test"`
+
 ## CI/CD 与编译
 
 - **GitHub Actions**：项目配置了 [win64-release.yml](.github/workflows/win64-release.yml)，在 `main` 分支有代码推送时自动执行。
@@ -62,6 +70,8 @@
     - `cargo fmt --all -- --check`
     - `cargo clippy --all-targets --all-features -- -D warnings`
     - `cargo test`
+- 若本地使用 Docker 开发，请优先使用容器内验证：
+    - `docker compose run --rm builder sh -c "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test"`
 - 对于录音机（recorder）/监控器（watcher）的更改，还需在 Windows 上使用真实的 VRChat 日志/进程进行手动冒烟测试（smoke check）。
 - 如果跳过了某项检查（受平台/工具限制），请明确说明跳过的内容及其原因。
 

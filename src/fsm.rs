@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
-
 
 use crate::bio::BioManager;
 use crate::db::Database;
@@ -22,22 +22,19 @@ enum AppState {
     Idle,
 
     /// 已进入世界（缓存了世界名称），但尚未收到 `Joining wrld_` 开始录制
-    InWorld {
-        world_name: String,
-    },
+    InWorld { world_name: String },
 
     /// 录制中 — 有活跃的 RecordingSession
     Recording {
         world_name: String,
         instance_id: String,
-        session: RecordingSession,
+        session: Box<RecordingSession>,
     },
 }
 
 // ---------------------------------------------------------------------------
 // 有限状态机
 // ---------------------------------------------------------------------------
-
 
 /// 集中管理所有运行时状态与状态转换逻辑的有限状态机。
 pub struct AppFsm {
@@ -46,15 +43,16 @@ pub struct AppFsm {
     bio_manager: Arc<BioManager>,
     mic_config: Arc<MicConfig>,
     base_dir: PathBuf,
+    bio_loop_stop: Option<Arc<AtomicBool>>,
 }
 
 impl AppFsm {
     /// 创建一个新的 FSM，初始状态为 `Idle`。
     pub fn new(
-        db: Arc<Database>, 
+        db: Arc<Database>,
         bio_manager: Arc<BioManager>,
-        mic_config: Arc<MicConfig>, 
-        base_dir: PathBuf
+        mic_config: Arc<MicConfig>,
+        base_dir: PathBuf,
     ) -> Self {
         Self {
             state: AppState::Idle,
@@ -62,6 +60,7 @@ impl AppFsm {
             bio_manager,
             mic_config,
             base_dir,
+            bio_loop_stop: None,
         }
     }
 
@@ -102,7 +101,8 @@ impl AppFsm {
 
     /// 检测 VRChat 进程是否已退出。若已退出则自动结束录音并回到 Idle。
     pub fn check_process_alive(&mut self) {
-        let should_finish = matches!(&self.state, AppState::Recording { session, .. } if !session.is_alive());
+        let should_finish =
+            matches!(&self.state, AppState::Recording { session, .. } if !session.is_alive());
 
         if should_finish {
             info!("{}", t!("vrchat_exited"));
@@ -128,9 +128,7 @@ impl AppFsm {
 
         match &mut self.state {
             AppState::Idle => {
-                self.state = AppState::InWorld {
-                    world_name,
-                };
+                self.state = AppState::InWorld { world_name };
             }
             AppState::InWorld { world_name: wn } => {
                 *wn = world_name;
@@ -176,7 +174,13 @@ impl AppFsm {
             let world_name_str = world_name.clone();
 
             let mc = (*self.mic_config).clone();
-            match RecordingSession::start(&self.base_dir, &world_name_str, &instance_id_str, mc, pid) {
+            match RecordingSession::start(
+                &self.base_dir,
+                &world_name_str,
+                &instance_id_str,
+                mc,
+                pid,
+            ) {
                 Ok(session) => {
                     info!("{}", t!("entering_recording_state"));
                     let output_dir = session.output_dir.clone();
@@ -186,7 +190,7 @@ impl AppFsm {
                     self.state = AppState::Recording {
                         world_name: world_name_str,
                         instance_id: instance_id_str,
-                        session,
+                        session: Box::new(session),
                     };
 
                     // Start BIO Pacing Loop
@@ -194,15 +198,26 @@ impl AppFsm {
                     let db = self.db.clone();
                     let session_start_time = timestamp.clone();
                     let mut retry_cooldown: HashMap<String, Instant> = HashMap::new();
-                    
+                    let stop_flag = Arc::new(AtomicBool::new(false));
+                    self.bio_loop_stop = Some(stop_flag.clone());
+
                     tokio::spawn(async move {
                         info!("Starting BIO pacing loop for {}...", world_name_for_loop);
                         loop {
+                            if stop_flag.load(Ordering::Relaxed) {
+                                info!("BIO pacing loop stopped for {}.", world_name_for_loop);
+                                break;
+                            }
+
                             tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
-                            
+                            if stop_flag.load(Ordering::Relaxed) {
+                                info!("BIO pacing loop stopped for {}.", world_name_for_loop);
+                                break;
+                            }
+
                             // 1. Get players who joined AFTER the session started and have no BIO
                             let missing = db.get_active_players_without_bio(&session_start_time);
-                            
+
                             // 2. Filter out those in retry cooldown (e.g., failed in the last 60 seconds)
                             let now = Instant::now();
                             let candidate = missing.iter().find(|(uid, _)| {
@@ -215,7 +230,10 @@ impl AppFsm {
 
                             if let Some((uid, name)) = candidate {
                                 info!("Pacing loop: Fetching BIO for {} ({})", name, uid);
-                                if let Err(e) = bio_manager.process_user(uid, false, Some(&output_dir)).await {
+                                if let Err(e) = bio_manager
+                                    .process_user(uid, false, Some(&output_dir))
+                                    .await
+                                {
                                     warn!("Pacing loop fetch failed for {}: {}. Cooling down for 60s.", name, e);
                                     retry_cooldown.insert(uid.clone(), now);
                                 } else {
@@ -238,7 +256,12 @@ impl AppFsm {
     }
 
     /// 玩家加入
-    fn on_player_joined(&mut self, display_name: String, user_id: Option<String>, timestamp: String) {
+    fn on_player_joined(
+        &mut self,
+        display_name: String,
+        user_id: Option<String>,
+        timestamp: String,
+    ) {
         let uid_display = user_id
             .as_deref()
             .map(|id| format!(" ({})", id))
@@ -255,7 +278,7 @@ impl AppFsm {
             self.db.register_user(uid, &display_name, None, None, None);
             let (wn, inst) = self.current_world_instance();
             self.db.start_visit(uid, &wn, &inst, &timestamp);
-            
+
             // Note: Auto-BIO is now handled by a polling loop in the Recording state
         }
     }
@@ -281,6 +304,10 @@ impl AppFsm {
 
     /// 结束当前录音会话并将状态回退到 Idle。
     fn finish_current_session(&mut self, reason: &str) {
+        if let Some(stop_flag) = self.bio_loop_stop.take() {
+            stop_flag.store(true, Ordering::Relaxed);
+        }
+
         let old_state = std::mem::replace(&mut self.state, AppState::Idle);
 
         if let AppState::Recording { session, .. } = old_state {
@@ -295,9 +322,7 @@ impl AppFsm {
     fn current_world_instance(&self) -> (String, String) {
         match &self.state {
             AppState::Idle => (t!("unknown_world"), t!("unknown_instance")),
-            AppState::InWorld { world_name } => {
-                (world_name.clone(), t!("unknown_instance"))
-            }
+            AppState::InWorld { world_name } => (world_name.clone(), t!("unknown_instance")),
             AppState::Recording {
                 world_name,
                 instance_id,

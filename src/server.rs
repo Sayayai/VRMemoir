@@ -154,12 +154,12 @@ async fn get_vrc_user_info(
     Path(user_id): Path<String>,
 ) -> impl IntoResponse {
     match state.bio.process_user(&user_id, true, None).await {
-        Ok(user_data) => {
-            axum::response::Response::builder()
-                .header("content-type", "application/json; charset=utf-8")
-                .body(axum::body::Body::from(serde_json::to_string(&user_data).unwrap()))
-                .unwrap()
-        }
+        Ok(user_data) => axum::response::Response::builder()
+            .header("content-type", "application/json; charset=utf-8")
+            .body(axum::body::Body::from(
+                serde_json::to_string(&user_data).unwrap(),
+            ))
+            .unwrap(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),

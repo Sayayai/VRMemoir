@@ -43,11 +43,6 @@ pub struct ActivePlayer {
     pub joined_at: Option<String>,
 }
 
-
-
-
-
-
 impl Database {
     pub fn new(db_path: &Path) -> Result<Self> {
         let conn = Connection::open(db_path)?;
@@ -144,7 +139,7 @@ impl Database {
     ) {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         // Optional: Get previous values to populate history if desired
         // For now, focus on updating the main record
         let _ = conn.execute(
@@ -225,7 +220,9 @@ impl Database {
             )
             .unwrap();
         let rows = stmt
-            .query_map(params![since_timestamp], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map(params![since_timestamp], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
@@ -262,7 +259,9 @@ impl Database {
     pub fn get_all_users(&self) -> Vec<User> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT userId, displayName, lastBio, pronouns, trustLevel, updatedAt FROM users")
+            .prepare(
+                "SELECT userId, displayName, lastBio, pronouns, trustLevel, updatedAt FROM users",
+            )
             .unwrap();
         let rows = stmt
             .query_map([], |row| {
@@ -279,7 +278,6 @@ impl Database {
         rows.filter_map(|r| r.ok()).collect()
     }
 
-
     pub fn save_cookie(&self, key: &str, value: &str) {
         let conn = self.conn.lock().unwrap();
         let _ = conn.execute(
@@ -290,9 +288,11 @@ impl Database {
 
     pub fn get_cookie(&self, key: &str) -> Option<String> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT value FROM cookies WHERE key = ?1", params![key], |row| {
-            row.get(0)
-        })
+        conn.query_row(
+            "SELECT value FROM cookies WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
         .ok()
     }
 

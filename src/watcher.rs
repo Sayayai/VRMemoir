@@ -89,10 +89,7 @@ impl LogWatcher {
     fn parse_timestamp(line: &str) -> String {
         // VRChat log timestamps are local time: "2026.03.08 01:14:09"
         // Guard against non-ASCII lines (e.g. Japanese text) that would panic on byte slicing
-        if line.len() >= 19
-            && line.is_char_boundary(19)
-            && line.as_bytes()[0].is_ascii_digit()
-        {
+        if line.len() >= 19 && line.is_char_boundary(19) && line.as_bytes()[0].is_ascii_digit() {
             let date_str = &line[..19];
             date_str.replace('.', "-").replacen(' ', "T", 1)
         } else {

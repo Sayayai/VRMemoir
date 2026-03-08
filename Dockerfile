@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# 添加 Windows GNU 目标
-RUN rustup target add x86_64-pc-windows-gnu
+# 添加 Windows GNU 目标 + 常用检查组件
+RUN rustup target add x86_64-pc-windows-gnu && rustup component add rustfmt clippy
 
 WORKDIR /app
 
