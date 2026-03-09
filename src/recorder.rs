@@ -17,7 +17,10 @@ use crate::t;
 
 /// Find VRChat.exe process ID.
 pub fn find_vrchat_pid() -> Option<u32> {
-    let system = System::new_all();
+    // Optimization: Use targeted process refresh instead of System::new_all()
+    // to reduce CPU and I/O overhead.
+    let mut system = System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     for (pid, process) in system.processes() {
         let process: &sysinfo::Process = process;
         let name = process.name().to_string_lossy();
@@ -382,7 +385,7 @@ fn capture_thread(
         // Wait for next buffer event (timeout 300ms)
         if h_event.wait_for_event(300).is_err() {
             // Timeout — check if process is still alive
-            if !is_process_alive(process_id) {
+            if !is_process_running(process_id) {
                 info!("{}", t!("vrchat_exited_stop"));
                 break;
             }
@@ -543,13 +546,6 @@ fn mix_pcm(a: &[i16], b: &[i16]) -> Vec<i16> {
         out.push(mixed as i16);
     }
     out
-}
-
-/// Check if a process is still alive
-#[cfg(windows)]
-fn is_process_alive(pid: u32) -> bool {
-    let system = System::new_all();
-    system.process(sysinfo::Pid::from_u32(pid)).is_some()
 }
 
 /// Generate a pseudo-random serial number for OGG stream
