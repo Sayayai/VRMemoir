@@ -327,7 +327,7 @@ warn!("{}", t!("vrchat_capture_read_error", format!("{:?}", e)));
                     .saturating_sub(mic_queue.capacity() - mic_queue.len());
                 mic_queue.reserve(additional);
                 if let Err(e) = mc.capture_client.read_from_device_to_deque(&mut mic_queue) {
-                    warn!("{}", t!("mic_capture_read_error", e));
+warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
                 }
             }
         }
