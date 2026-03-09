@@ -42,11 +42,7 @@ impl BioManager {
         if !force_refresh {
             if let Some(display_name) = self.db.get_display_name(user_id) {
                 if let Some(existing_file) = self.find_existing_bio_file(&display_name) {
-                    tracing::info!(
-                        "BIO already exists locally for {} ({}), skipping fetch.",
-                        display_name,
-                        user_id
-                    );
+                    tracing::info!("{}", t!("bio_already_exists", display_name, user_id));
                     // Also create symlink if needed using the existing file
                     if let Some(target_dir) = session_dir {
                         let _ = self.create_symlink(&existing_file, target_dir, &display_name);

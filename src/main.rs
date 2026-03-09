@@ -289,21 +289,21 @@ async fn main() -> Result<()> {
                 continue;
             }
             if re.is_match(input) {
-                info!("Manual BIO fetch triggered for: {}", input);
+                info!("{}", t!("manual_bio_fetch_triggered", input));
                 match bio_for_stdin.process_user(input, true, None, true).await {
                     Ok(data) => {
                         let name = data
                             .get("displayName")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Unknown");
-                        info!("Successfully fetched BIO for: {} ({})", name, input);
+                        info!("{}", t!("manual_bio_fetch_success", name, input));
                     }
                     Err(e) => {
-                        error!("Failed to fetch BIO for {}: {}", input, e);
+                        error!("{}", t!("manual_bio_fetch_failed", input, e));
                     }
                 }
             } else {
-                info!("Invalid input. If you want to fetch a user, paste a valid VRChat User ID (e.g., usr_xxx).");
+                info!("{}", t!("manual_bio_fetch_invalid_input"));
             }
         }
     });

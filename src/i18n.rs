@@ -315,6 +315,20 @@ MIC_DEVICE=
         "auto_start_detected_pid",
         "Auto-start: Detected VRChat PID {} while InWorld, attempting to start recording.",
     );
+    en.insert("entering_recording_state", "Entering recording state...");
+    en.insert("starting_bio_pacing_track", "Starting BIO pacing track for {}...");
+    en.insert("vrchat_exit", "VRChat exited");
+    en.insert("program_exit", "Program exited");
+    en.insert("switching_room", "Switching room");
+    en.insert("vrchat_capture_read_error", "VRChat capture read error: {}");
+    en.insert("mic_capture_read_error", "Mic capture read error: {}");
+    en.insert("ogg_write_error", "OGG write error: {}");
+    en.insert("opus_encode_error", "Opus encode error: {}");
+    en.insert("manual_bio_fetch_triggered", "Manual BIO fetch triggered for: {}");
+    en.insert("manual_bio_fetch_success", "Successfully fetched BIO for: {} ({})");
+    en.insert("manual_bio_fetch_invalid_input", "Invalid input. If you want to fetch a user, paste a valid VRChat User ID (e.g., usr_xxx).");
+    en.insert("manual_bio_fetch_failed", "Failed to fetch BIO for {}: {}");
+    en.insert("bio_already_exists", "BIO already exists locally for {} ({}), skipping fetch.");
 
     m.insert(Language::En, en);
 
@@ -523,6 +537,20 @@ MIC_DEVICE=
         "auto_start_detected_pid",
         "自动启动: 在 InWorld 状态检测到 VRChat PID {}，尝试开始录制。",
     );
+    zh.insert("entering_recording_state", "进入录音状态...");
+    zh.insert("starting_bio_pacing_track", "正在开始 {} 的 BIO 轮询追踪...");
+    zh.insert("vrchat_exit", "VRChat 退出");
+    zh.insert("program_exit", "程序退出");
+    zh.insert("switching_room", "切换房间");
+    zh.insert("vrchat_capture_read_error", "VRChat 捕获读取错误: {}");
+    zh.insert("mic_capture_read_error", "麦克风捕获读取错误: {}");
+    zh.insert("ogg_write_error", "OGG 写入错误: {}");
+    zh.insert("opus_encode_error", "Opus 编码错误: {}");
+    zh.insert("manual_bio_fetch_triggered", "手动触发 BIO 获取: {}");
+    zh.insert("manual_bio_fetch_success", "成功获取 BIO: {} ({})");
+    zh.insert("manual_bio_fetch_invalid_input", "无效输入。如果要获取用户，请粘贴有效的 VRChat 用户 ID（例如 usr_xxx）。");
+    zh.insert("manual_bio_fetch_failed", "获取 {} 的 BIO 失败: {}");
+    zh.insert("bio_already_exists", "本地已存在 {} ({}) 的 BIO，跳过获取。");
 
     m.insert(Language::Zh, zh);
 
@@ -815,6 +843,20 @@ MIC_DEVICE=
         "auto_start_detected_pid",
         "自動起動: InWorld 状態で VRChat PID {} を検出。録音の開始を試みます。",
     );
+    ja.insert("entering_recording_state", "録音状態に入ります...");
+    ja.insert("starting_bio_pacing_track", "{} のBIOポーリング追跡を開始します...");
+    ja.insert("vrchat_exit", "VRChat 終了");
+    ja.insert("program_exit", "プログラム終了");
+    ja.insert("switching_room", "ルーム切り替え");
+    ja.insert("vrchat_capture_read_error", "VRChatキャプチャ読み取りエラー: {}");
+    ja.insert("mic_capture_read_error", "マイクキャプチャ読み取りエラー: {}");
+    ja.insert("ogg_write_error", "OGG書き込みエラー: {}");
+    ja.insert("opus_encode_error", "Opusエンコードエラー: {}");
+    ja.insert("manual_bio_fetch_triggered", "手動でのBIO取得がトリガーされました: {}");
+    ja.insert("manual_bio_fetch_success", "BIOの取得に成功しました: {} ({})");
+    ja.insert("manual_bio_fetch_invalid_input", "無効な入力です。ユーザーを取得する場合は、有効なVRChatユーザーID（例: usr_xxx）を貼り付けてください。");
+    ja.insert("manual_bio_fetch_failed", "{} のBIO取得に失敗しました: {}");
+    ja.insert("bio_already_exists", "{} ({}) のBIOは既にローカルに存在するため、取得をスキップします。");
 
     m.insert(Language::Ja, ja);
 
@@ -1078,6 +1120,20 @@ MIC_DEVICE=
         "auto_start_detected_pid",
         "자동 시작: InWorld 상태에서 VRChat PID {} 감지. 녹음 시작을 시도합니다.",
     );
+    ko.insert("entering_recording_state", "녹음 상태로 진입 중...");
+    ko.insert("starting_bio_pacing_track", "{}의 BIO 폴링 추적을 시작합니다...");
+    ko.insert("vrchat_exit", "VRChat 종료");
+    ko.insert("program_exit", "프로그램 종료");
+    ko.insert("switching_room", "방 전환");
+    ko.insert("vrchat_capture_read_error", "VRChat 캡처 읽기 오류: {}");
+    ko.insert("mic_capture_read_error", "마이크 캡처 읽기 오류: {}");
+    ko.insert("ogg_write_error", "OGG 쓰기 오류: {}");
+    ko.insert("opus_encode_error", "Opus 인코딩 오류: {}");
+    ko.insert("manual_bio_fetch_triggered", "수동 BIO 가져오기가 트리거됨: {}");
+    ko.insert("manual_bio_fetch_success", "BIO 가져오기 성공: {} ({})");
+    ko.insert("manual_bio_fetch_invalid_input", "잘못된 입력입니다. 사용자를 가져오려면 유효한 VRChat 사용자 ID(예: usr_xxx)를 붙여넣으세요.");
+    ko.insert("manual_bio_fetch_failed", "{}의 BIO 가져오기 실패: {}");
+    ko.insert("bio_already_exists", "{} ({})의 BIO가 이미 로컬에 존재하므로 가져오기를 건너뜁니다.");
 
     m.insert(Language::Ko, ko);
 
