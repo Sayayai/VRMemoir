@@ -373,7 +373,7 @@ warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
                         ogg::PacketWriteEndInfo::NormalPacket,
                         granule_pos,
                     ) {
-                        warn!("{}", t!("ogg_write_error", e));
+warn!("{}", t!("ogg_write_error", format!("{:?}", e)));
                     }
                 }
                 Err(e) => {
