@@ -311,7 +311,7 @@ fn capture_thread(
                 .saturating_sub(vrc_queue.capacity() - vrc_queue.len());
             vrc_queue.reserve(additional);
             if let Err(e) = capture_client.read_from_device_to_deque(&mut vrc_queue) {
-                warn!("{}", t!("vrchat_capture_read_error", e));
+warn!("{}", t!("vrchat_capture_read_error", format!("{:?}", e)));
             }
         }
 
