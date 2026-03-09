@@ -377,7 +377,7 @@ warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
                     }
                 }
                 Err(e) => {
-                    warn!("{}", t!("opus_encode_error", e));
+warn!("{}", t!("opus_encode_error", format!("{:?}", e)));
                 }
             }
         }
