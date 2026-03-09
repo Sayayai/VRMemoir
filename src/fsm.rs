@@ -99,7 +99,7 @@ impl AppFsm {
 
         if should_finish {
             info!("{}", t!("vrchat_exited"));
-            self.finish_current_session("VRChat 退出");
+            self.finish_current_session(&t!("vrchat_exit"));
         }
     }
 
@@ -177,7 +177,7 @@ impl AppFsm {
     pub fn shutdown(&mut self) {
         if matches!(&self.state, AppState::Recording { .. }) {
             info!("{}", t!("shutdown_saving_recording"));
-            self.finish_current_session("程序退出");
+            self.finish_current_session(&t!("program_exit"));
         }
     }
 
@@ -213,7 +213,7 @@ impl AppFsm {
 
         // 2. 如果当前正在录音，先结束旧的
         if matches!(&self.state, AppState::Recording { .. }) {
-            self.finish_current_session("切换房间");
+            self.finish_current_session(&t!("switching_room"));
         }
 
         // Parse instance ID from location string
@@ -251,7 +251,7 @@ impl AppFsm {
                         processed: std::collections::HashSet::new(),
                         last_bio_check: Instant::now(),
                     };
-                    info!("Starting BIO pacing track for {}...", world_name_str);
+                    info!("{}", t!("starting_bio_pacing_track", world_name_str));
                 }
                 Err(e) => {
                     warn!("{}", t!("mic_start_failed", e));
