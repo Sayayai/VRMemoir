@@ -68,22 +68,18 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        // Optimization: Use O(N) max_by_key instead of O(N log N) sorting
+        // to find the latest log file more efficiently.
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("output_log_") && name.ends_with(".txt")
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("output_log_") && name_str.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
@@ -98,14 +94,18 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Optimization: Early exit for lines that definitely don't contain events
+        // to avoid unnecessary timestamp parsing and string operations.
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") {
+            return None;
+        }
 
         // 1. World Name
         if line.contains("[Behaviour] Entering Room: ") {
             if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
                 return Some(LogEvent::Location {
                     world_name: world_name.to_string(),
-                    timestamp,
+                    timestamp: Self::parse_timestamp(line),
                 });
             }
         }
@@ -115,7 +115,7 @@ impl LogWatcher {
             if let Some(location) = line.split("] Joining ").nth(1) {
                 return Some(LogEvent::LocationInstance {
                     location: location.to_string(),
-                    timestamp,
+                    timestamp: Self::parse_timestamp(line),
                 });
             }
         }
@@ -123,6 +123,7 @@ impl LogWatcher {
         // 3. Player Joined
         if line.contains("[Behaviour] OnPlayerJoined") {
             if let Some(parts) = line.split("] OnPlayerJoined ").nth(1) {
+                let timestamp = Self::parse_timestamp(line);
                 if let Some(caps) = self.player_joined_re.captures(parts) {
                     return Some(LogEvent::PlayerJoined {
                         display_name: caps[1].to_string(),
@@ -142,6 +143,7 @@ impl LogWatcher {
         // 4. Player Left
         if line.contains("[Behaviour] OnPlayerLeft") && !line.contains("OnPlayerLeftRoom") {
             if let Some(parts) = line.split("] OnPlayerLeft ").nth(1) {
+                let timestamp = Self::parse_timestamp(line);
                 if let Some(caps) = self.player_left_re.captures(parts) {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
@@ -160,7 +162,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         None
