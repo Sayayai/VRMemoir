@@ -68,22 +68,17 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        // Optimization: Use O(N) max_by_key instead of O(N log N) sort to find latest log.
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("output_log_") && name.ends_with(".txt")
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("output_log_") && name_str.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
@@ -98,6 +93,12 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
+        // Optimization: Early return for lines that don't match any keywords to avoid
+        // unnecessary timestamp parsing and regex/splitting operations.
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") {
+            return None;
+        }
+
         let timestamp = Self::parse_timestamp(line);
 
         // 1. World Name
@@ -214,17 +215,18 @@ impl LogWatcher {
             s
         };
 
-        // If the content doesn't end with a newline, the last line is incomplete
+        // Optimization: Iterate over lines directly using a peekable iterator to handle
+        // incomplete lines without collecting into a Vec.
         let has_trailing_newline = content.ends_with('\n') || content.ends_with('\r');
+        let mut lines_iter = content.lines().peekable();
 
-        let mut lines: Vec<&str> = content.lines().collect();
+        while let Some(line) = lines_iter.next() {
+            // If the content doesn't end with a newline, the last line is incomplete
+            if !has_trailing_newline && lines_iter.peek().is_none() {
+                self.incomplete_line = line.to_string();
+                break;
+            }
 
-        if !has_trailing_newline && !lines.is_empty() {
-            // Save the incomplete last line for next read
-            self.incomplete_line = lines.pop().unwrap().to_string();
-        }
-
-        for line in lines {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 if let Some(event) = self.parse_line(trimmed) {
