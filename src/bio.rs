@@ -368,10 +368,10 @@ impl BioManager {
             if link_path.exists() {
                 let _ = std::fs::remove_file(&link_path);
             }
-            if std::os::windows::fs::symlink_file(&abs_target, &link_path).is_err() {
-                if std::fs::hard_link(&abs_target, &link_path).is_err() {
-                    std::fs::copy(&abs_target, &link_path)?;
-                }
+            if std::os::windows::fs::symlink_file(&abs_target, &link_path).is_err()
+                && std::fs::hard_link(&abs_target, &link_path).is_err()
+            {
+                std::fs::copy(&abs_target, &link_path)?;
             }
         }
         #[cfg(unix)]
