@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -53,10 +53,12 @@ jobs:
 
       - name: Upload branch artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vrmemoir-${{ github.ref_name }}-win64
           path: target/release/vrmemoir.exe
           if-no-files-found: error
           retention-days: 14
+
+
 
