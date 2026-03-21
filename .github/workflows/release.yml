@@ -1,21 +1,21 @@
-name: Build And Release Win64
+name: Release Win64
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: win64-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build (Windows x64)
+    name: Build Release Artifact
     runs-on: windows-latest
 
     steps:
@@ -25,8 +25,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo artifacts
+      - name: Cache Cargo registry and target
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-x64-shared
+          cache-on-failure: true
+          workspaces: |
+            . -> target
 
       - name: Build release binary
         run: cargo build --release --locked
@@ -40,11 +45,11 @@ jobs:
           name: win64-exe
           path: target/release/vrmemoir.exe
           if-no-files-found: error
+          retention-days: 14
 
   release:
     name: Publish GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
 
     steps:

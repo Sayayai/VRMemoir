@@ -11,30 +11,19 @@
     - `src/server.rs`: Axum 路由以及身份验证/个性化端点。
     - `src/db.rs`: SQLite 持久化。
 
-## 设置命令
+## 开发与验证约定
 
-- 安装工具链：`rustup toolchain install stable`
-- 构建调试版：`cargo build`
-- 本地运行：`cargo run`
-- 运行测试：`cargo test`
-- Lint 检查：`cargo clippy --all-targets --all-features -- -D warnings`
-- 格式检查：`cargo fmt --all -- --check`
-- 格式化写入：`cargo fmt --all`
-
-## Docker 开发与验证
-
-- 构建 Win64 产物（默认命令）：`docker compose run --rm builder`
-- 容器内格式检查：`docker compose run --rm builder sh -c "cargo fmt --all -- --check"`
-- 容器内 Lint：`docker compose run --rm builder sh -c "cargo clippy --all-targets --all-features -- -D warnings"`
-- 容器内测试：`docker compose run --rm builder sh -c "cargo test"`
-- 容器内完整验证（推荐）：`docker compose run --rm builder sh -c "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test"`
+- 默认以 GitHub Actions 为唯一编译与验证入口，不再要求本地 Docker/本地 Rust 环境完成日常构建检查。
+- 本地开发以代码编辑、静态审查和必要的配置修改为主；编译、格式检查、Lint、测试和 Windows 产物生成统一交给 CI/CD。
+- 如确有必要进行本地临时验证，需在变更说明中明确标注其为补充性操作，而不是默认流程。
 
 ## CI/CD 与编译
 
-- **GitHub Actions**：项目配置了 [win64-release.yml](.github/workflows/win64-release.yml)，在 `main` 分支有代码推送时自动执行。
-- **手动触发编译**：若需手动触发编译并发布 Release，请访问 GitHub 项目页面的 **Actions** 选项卡，选择 **Build And Release Win64** 工作流，并点击 **Run workflow** 按钮。
-  [👉 立即前往 GitHub Actions 触发编译](../../actions/workflows/win64-release.yml)
-
+- **CI 工作流**：项目配置了 [ci.yml](.github/workflows/ci.yml)，在 `main`、`codex/dev` 分支推送以及 Pull Request 时自动执行。
+- **CI 验证内容**：`cargo fmt --all -- --check`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test --locked`、`cargo build --release --locked`。
+- **开发分支产物策略**：`codex/dev` 分支只在 GitHub Actions 中生成并保存 artifact，不创建 GitHub Release。
+- **正式发布工作流**：项目配置了 [release.yml](.github/workflows/release.yml)，仅在推送 `v*.*.*` tag 或手动触发时发布 GitHub Release。
+- **手动触发**：若需手动验证开发分支，请在 Actions 里运行 `CI`；若需手动发布，请运行 `Release Win64`。
 
 ## 环境与运行时
 
@@ -53,8 +42,7 @@
 
 - 主要目标是 Windows（使用 `wasapi`, `winreg`, 以及 VRChat 进程/日志路径）。
 - 本地日志监控预期路径为 `%APPDATA%\\..\\LocalLow\\VRChat\\VRChat`。
-- 支持使用 Docker 交叉编译到 Windows GNU：
-    - `docker compose run --rm builder`
+- CI/CD 中默认在 GitHub Actions 的 `windows-latest` 环境执行验证和构建，并缓存 Cargo registry 与 `target` 目录。
 
 ## 编码规范
 
@@ -66,14 +54,14 @@
 
 ## 测试说明
 
-- 完成更改前的最低要求：
+- 完成更改前的默认要求是等待 GitHub Actions `CI` 工作流通过。
+- `CI` 工作流必须覆盖以下检查：
     - `cargo fmt --all -- --check`
     - `cargo clippy --all-targets --all-features -- -D warnings`
-    - `cargo test`
-- 若本地使用 Docker 开发，请优先使用容器内验证：
-    - `docker compose run --rm builder sh -c "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test"`
-- 对于录音机（recorder）/监控器（watcher）的更改，还需在 Windows 上使用真实的 VRChat 日志/进程进行手动冒烟测试（smoke check）。
-- 如果跳过了某项检查（受平台/工具限制），请明确说明跳过的内容及其原因。
+    - `cargo test --locked`
+    - `cargo build --release --locked`
+- 对于录音机（recorder）/监控器（watcher）的更改，若涉及真实设备或 VRChat 运行时行为，仍建议补充 Windows 手动冒烟测试；若未执行，应在说明中明确标注。
+- 如果某项检查因 GitHub Actions 环境限制而被跳过，请明确说明跳过内容及原因。
 
 ## 安全考量
 
@@ -86,3 +74,4 @@
 - 保持补丁（patch）小巧且聚焦；避免无关的重构。
 - 更改环境变量、端点或输出布局时，请更新文档/示例。
 - 如果 FSM 状态转换或 API 响应字段的行为发生变化，请在更改摘要中清楚地说明兼容性影响。
+
