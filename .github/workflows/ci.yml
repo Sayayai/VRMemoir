@@ -51,11 +51,19 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
+      - name: Sanitize branch name
+        id: sanitize
+        shell: bash
+        run: |
+          REF_NAME="${{ github.ref_name }}"
+          SAFE_REF_NAME="${REF_NAME//\//-}"
+          echo "safe_ref_name=$SAFE_REF_NAME" >> $GITHUB_OUTPUT
+
       - name: Upload branch artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v6
         with:
-          name: vrmemoir-${{ github.ref_name }}-win64
+          name: vrmemoir-${{ steps.sanitize.outputs.safe_ref_name }}-win64
           path: target/release/vrmemoir.exe
           if-no-files-found: error
           retention-days: 14
