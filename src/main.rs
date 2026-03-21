@@ -4,6 +4,7 @@ mod db;
 mod fsm;
 mod i18n;
 mod recorder;
+mod report;
 mod server;
 mod session;
 mod watcher;
@@ -202,6 +203,7 @@ async fn main() -> Result<()> {
 
     // Initialize BIO Manager
     let bio_manager = Arc::new(crate::bio::BioManager::new(api.clone(), db.clone()));
+    let report_manager = Arc::new(crate::report::VrcxReportManager::new(api.clone()));
 
     // 创建有限状态机 (FSM)
     let mic_config_shared = Arc::new(mic_config);
@@ -277,7 +279,7 @@ async fn main() -> Result<()> {
     });
 
     // Spawn terminal input listener
-    let bio_for_stdin = bio_manager.clone();
+    let report_for_stdin = report_manager.clone();
     tokio::spawn(async move {
         let std_in = tokio::io::stdin();
         let mut reader = BufReader::new(std_in).lines();
@@ -289,21 +291,20 @@ async fn main() -> Result<()> {
                 continue;
             }
             if re.is_match(input) {
-                info!("{}", t!("manual_bio_fetch_triggered", input));
-                match bio_for_stdin.process_user(input, true, None, true).await {
-                    Ok(data) => {
-                        let name = data
-                            .get("displayName")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Unknown");
-                        info!("{}", t!("manual_bio_fetch_success", name, input));
+                info!("{}", t!("manual_report_fetch_triggered", input));
+                match report_for_stdin.export_user_report(input).await {
+                    Ok(path) => {
+                        info!(
+                            "{}",
+                            t!("manual_report_fetch_success", input, path.display())
+                        );
                     }
                     Err(e) => {
-                        error!("{}", t!("manual_bio_fetch_failed", input, e));
+                        error!("{}", t!("manual_report_fetch_failed", input, e));
                     }
                 }
             } else {
-                info!("{}", t!("manual_bio_fetch_invalid_input"));
+                info!("{}", t!("manual_report_fetch_invalid_input"));
             }
         }
     });
