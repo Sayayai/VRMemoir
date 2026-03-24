@@ -39,8 +39,7 @@ pub struct LogWatcher {
     current_log_file: Option<PathBuf>,
     last_read_pos: u64,
     incomplete_line: String,
-    player_joined_re: Regex,
-    player_left_re: Regex,
+    player_re: Regex,
 }
 
 impl LogWatcher {
@@ -58,8 +57,7 @@ impl LogWatcher {
             current_log_file: None,
             last_read_pos: 0,
             incomplete_line: String::new(),
-            player_joined_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
-            player_left_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
         }
     }
 
@@ -68,22 +66,16 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("output_log_") && name.ends_with(".txt")
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("output_log_") && name_str.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
@@ -98,51 +90,60 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Fast-path heuristics: skip lines without target keywords
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") {
+            return None;
+        }
 
         // 1. World Name
-        if line.contains("[Behaviour] Entering Room: ") {
-            if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
-                return Some(LogEvent::Location {
-                    world_name: world_name.to_string(),
-                    timestamp,
-                });
-            }
+        const ENTERING_ROOM: &str = "] Entering Room: ";
+        if let Some(idx) = line.find(ENTERING_ROOM) {
+            let world_name = &line[idx + ENTERING_ROOM.len()..];
+            return Some(LogEvent::Location {
+                world_name: world_name.to_string(),
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         // 2. Instance ID
+        const JOINING: &str = "] Joining ";
         if line.contains("[Behaviour] Joining wrld_") {
-            if let Some(location) = line.split("] Joining ").nth(1) {
+            if let Some(idx) = line.find(JOINING) {
+                let location = &line[idx + JOINING.len()..];
                 return Some(LogEvent::LocationInstance {
                     location: location.to_string(),
-                    timestamp,
+                    timestamp: Self::parse_timestamp(line),
                 });
             }
         }
 
         // 3. Player Joined
-        if line.contains("[Behaviour] OnPlayerJoined") {
-            if let Some(parts) = line.split("] OnPlayerJoined ").nth(1) {
-                if let Some(caps) = self.player_joined_re.captures(parts) {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: caps[1].to_string(),
-                        user_id: Some(caps[2].to_string()),
-                        timestamp,
-                    });
-                } else {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: parts.trim().to_string(),
-                        user_id: None,
-                        timestamp,
-                    });
-                }
+        const PLAYER_JOINED: &str = "] OnPlayerJoined ";
+        if let Some(idx) = line.find(PLAYER_JOINED) {
+            let parts = &line[idx + PLAYER_JOINED.len()..];
+            let timestamp = Self::parse_timestamp(line);
+            if let Some(caps) = self.player_re.captures(parts) {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: caps[1].to_string(),
+                    user_id: Some(caps[2].to_string()),
+                    timestamp,
+                });
+            } else {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: parts.trim().to_string(),
+                    user_id: None,
+                    timestamp,
+                });
             }
         }
 
         // 4. Player Left
-        if line.contains("[Behaviour] OnPlayerLeft") && !line.contains("OnPlayerLeftRoom") {
-            if let Some(parts) = line.split("] OnPlayerLeft ").nth(1) {
-                if let Some(caps) = self.player_left_re.captures(parts) {
+        const PLAYER_LEFT: &str = "] OnPlayerLeft ";
+        if let Some(idx) = line.find(PLAYER_LEFT) {
+            if !line.contains("OnPlayerLeftRoom") {
+                let parts = &line[idx + PLAYER_LEFT.len()..];
+                let timestamp = Self::parse_timestamp(line);
+                if let Some(caps) = self.player_re.captures(parts) {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
@@ -160,7 +161,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         None
@@ -324,5 +327,65 @@ impl LogWatcher {
 
         info!("{}", t!("watching_directory", log_dir.display()));
         Ok(rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn benchmark_parse_line() {
+        let watcher = LogWatcher::new();
+        let lines = vec![
+            "2026.03.08 01:14:09 Log        -  [Behaviour] Entering Room: Presentation Hall",
+            "2026.03.08 01:14:10 Log        -  [Behaviour] Joining wrld_12345:6789",
+            "2026.03.08 01:14:11 Log        -  [Behaviour] OnPlayerJoined User One (usr_123)",
+            "2026.03.08 01:14:12 Log        -  [Behaviour] OnPlayerLeft User One (usr_123)",
+            "2026.03.08 01:14:13 Log        -  uSpeak: Start Microphone",
+            "2026.03.08 01:14:14 Log        -  Random noise line that should be skipped fast",
+        ];
+
+        let start = Instant::now();
+        for _ in 0..10000 {
+            for line in &lines {
+                let _ = watcher.parse_line(line);
+            }
+        }
+        let duration = start.elapsed();
+        println!(
+            "Baseline parse_line duration for 60,000 lines: {:?}",
+            duration
+        );
+    }
+
+    #[test]
+    fn benchmark_get_latest_log_file() {
+        let temp_dir = std::env::temp_dir().join("vrmemoir_bench");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create 100 dummy log files
+        for i in 0..100 {
+            let path = temp_dir.join(format!("output_log_{}.txt", i));
+            fs::write(path, "test").unwrap();
+            // Sleep a bit to ensure different modification times if needed,
+            // but for benchmark we just care about the sorting/filtering overhead.
+        }
+
+        let mut watcher = LogWatcher::new();
+        watcher.log_dir = temp_dir.clone();
+
+        let start = Instant::now();
+        for _ in 0..1000 {
+            let _ = watcher.get_latest_log_file();
+        }
+        let duration = start.elapsed();
+        println!(
+            "Baseline get_latest_log_file duration for 1,000 calls (100 files): {:?}",
+            duration
+        );
+
+        fs::remove_dir_all(temp_dir).unwrap();
     }
 }
