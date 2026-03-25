@@ -1,0 +1,3 @@
+## 2025-02-14 - Optimizing VRChat Log Parsing and File Handling
+**Learning:** In hot paths like log parsing, early return heuristics based on simple keyword checks (`contains`) can skip expensive operations like regex matching and timestamp parsing for the majority of lines. Using a `peekable` iterator instead of `collect::<Vec<_>>()` in `read_new_lines` avoids unnecessary allocations of line pointers.
+**Action:** Always prefer lazy evaluation (via closures) and direct string slicing over `split().nth()` in performance-sensitive string processing loops. Use `max_by_key` for O(N) selection in directory listings.
