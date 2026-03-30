@@ -98,14 +98,22 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Optimization: Early return for non-event lines to avoid further processing.
+        // Most VRChat log lines do not contain these keywords.
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") && !line.contains("] Joining ")
+        {
+            return None;
+        }
+
+        // Optimization: Use lazy evaluation for timestamp to avoid parsing it for every line.
+        let timestamp = || Self::parse_timestamp(line);
 
         // 1. World Name
         if line.contains("[Behaviour] Entering Room: ") {
             if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
                 return Some(LogEvent::Location {
                     world_name: world_name.to_string(),
-                    timestamp,
+                    timestamp: timestamp(),
                 });
             }
         }
@@ -115,7 +123,7 @@ impl LogWatcher {
             if let Some(location) = line.split("] Joining ").nth(1) {
                 return Some(LogEvent::LocationInstance {
                     location: location.to_string(),
-                    timestamp,
+                    timestamp: timestamp(),
                 });
             }
         }
@@ -127,13 +135,13 @@ impl LogWatcher {
                     return Some(LogEvent::PlayerJoined {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
+                        timestamp: timestamp(),
                     });
                 } else {
                     return Some(LogEvent::PlayerJoined {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
+                        timestamp: timestamp(),
                     });
                 }
             }
@@ -146,13 +154,13 @@ impl LogWatcher {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
+                        timestamp: timestamp(),
                     });
                 } else {
                     return Some(LogEvent::PlayerLeft {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
+                        timestamp: timestamp(),
                     });
                 }
             }
@@ -160,7 +168,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: timestamp(),
+            });
         }
 
         None
