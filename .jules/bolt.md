@@ -1,0 +1,3 @@
+## 2025-03-08 - [Log Watcher Optimization]
+**Learning:** In scenarios where a directory contains many files (e.g., VRChat log directories after months of use), sorting the entire file list (O(N log N)) just to find the single newest file is inefficient. Replacing `sort_by` with `max_by_key` reduces complexity to O(N). Additionally, log parsing should prioritize early returns using simple `contains` checks to avoid expensive regex/timestamp operations on irrelevant lines.
+**Action:** Always prefer `max_by_key` or `min_by_key` when looking for a single extremum in a collection. Use cheap keyword filters before expensive parsing in hot paths like log watchers.
