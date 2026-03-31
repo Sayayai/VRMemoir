@@ -1,0 +1,3 @@
+## 2025-05-15 - [VRChat Log Watcher Optimizations]
+**Learning:** VRChat logs can be very large and are polled frequently (every 1s). The `parse_line` function is a hot path where string operations like `split().nth(1)` and redundant timestamp parsing add significant overhead. Using early returns with simple keyword checks and lazy evaluation for timestamps significantly reduces CPU usage. Replacing `collect::<Vec<_>>()` with a `peekable` iterator in `read_new_lines` avoids unnecessary heap allocations for every polling cycle.
+**Action:** Always prefer early returns and lazy evaluation in frequently called parsing functions. Use `peekable` iterators instead of collecting lines into a vector when the last element needs special handling.
