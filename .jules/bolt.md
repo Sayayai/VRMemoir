@@ -1,0 +1,3 @@
+## 2026-03-08 - Optimized Log Line Parsing in watcher.rs
+**Learning:** In high-frequency log parsing, eager timestamp evaluation and multiple string splits are major bottlenecks. Most log lines are irrelevant, so early return heuristics using simple keyword checks can bypass expensive logic. Lazy evaluation of the timestamp via a closure ensures that string allocations only occur when a relevant event is actually identified.
+**Action:** Always prioritize early-exit heuristics based on simple substring matches before performing complex parsing or regex matching in hot loops. Use lazy evaluation for any metadata extraction that isn't strictly required for the initial filtering.
