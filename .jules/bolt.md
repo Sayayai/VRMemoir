@@ -1,0 +1,3 @@
+## 2025-05-22 - Async Log Parsing and I/O Optimization
+**Learning:** Replaced synchronous file I/O with `tokio::fs` in the log watcher to prevent blocking the async runtime. Replaced O(N log N) file sorting with O(N) `max_by_key` search. Optimized string parsing by using lazy evaluation for timestamps and early return heuristics for log line classification. Also learned to avoid hallucinating Rust methods like `as_bytes_mut()` and that `unsafe` is often unnecessary for simple string manipulations.
+**Action:** Always prefer async I/O in `tokio` contexts. Use targeted heuristics before expensive operations (like regex or timestamp parsing). Avoid `unsafe` and verify method existence in the standard library or documentation before use.
