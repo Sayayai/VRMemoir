@@ -1,7 +1,7 @@
 use anyhow::Result;
 use regex::Regex;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -39,8 +39,7 @@ pub struct LogWatcher {
     current_log_file: Option<PathBuf>,
     last_read_pos: u64,
     incomplete_line: String,
-    player_joined_re: Regex,
-    player_left_re: Regex,
+    player_re: Regex,
 }
 
 impl LogWatcher {
@@ -58,8 +57,7 @@ impl LogWatcher {
             current_log_file: None,
             last_read_pos: 0,
             incomplete_line: String::new(),
-            player_joined_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
-            player_left_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
         }
     }
 
@@ -68,111 +66,122 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
+                let os_name = e.file_name();
+                let name = os_name.to_string_lossy();
                 name.starts_with("output_log_") && name.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
         // VRChat log timestamps are local time: "2026.03.08 01:14:09"
         // Guard against non-ASCII lines (e.g. Japanese text) that would panic on byte slicing
-        if line.len() >= 19 && line.is_char_boundary(19) && line.as_bytes()[0].is_ascii_digit() {
-            let date_str = &line[..19];
-            date_str.replace('.', "-").replacen(' ', "T", 1)
+        let bytes = line.as_bytes();
+        if bytes.len() >= 19 && bytes[0].is_ascii_digit() {
+            // Optimized timestamp conversion without multiple string allocations
+            let mut ts = Vec::with_capacity(19);
+            for (i, &b) in bytes.iter().take(19).enumerate() {
+                match i {
+                    4 | 7 => ts.push(b'-'),
+                    10 => ts.push(b'T'),
+                    _ => ts.push(b),
+                }
+            }
+            String::from_utf8_lossy(&ts).into_owned()
         } else {
             String::new()
         }
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Fast skip for lines that don't contain our keywords
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") {
+            return None;
+        }
+
+        // Lazy timestamp parsing
+        let get_timestamp = || Self::parse_timestamp(line);
 
         // 1. World Name
-        if line.contains("[Behaviour] Entering Room: ") {
-            if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
-                return Some(LogEvent::Location {
-                    world_name: world_name.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(idx) = line.find("] Entering Room: ") {
+            let world_name = &line[idx + 17..];
+            return Some(LogEvent::Location {
+                world_name: world_name.to_string(),
+                timestamp: get_timestamp(),
+            });
         }
 
         // 2. Instance ID
-        if line.contains("[Behaviour] Joining wrld_") {
-            if let Some(location) = line.split("] Joining ").nth(1) {
-                return Some(LogEvent::LocationInstance {
-                    location: location.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(idx) = line.find("] Joining wrld_") {
+            let location = &line[idx + 10..];
+            return Some(LogEvent::LocationInstance {
+                location: location.to_string(),
+                timestamp: get_timestamp(),
+            });
         }
 
         // 3. Player Joined
-        if line.contains("[Behaviour] OnPlayerJoined") {
-            if let Some(parts) = line.split("] OnPlayerJoined ").nth(1) {
-                if let Some(caps) = self.player_joined_re.captures(parts) {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: caps[1].to_string(),
-                        user_id: Some(caps[2].to_string()),
-                        timestamp,
-                    });
-                } else {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: parts.trim().to_string(),
-                        user_id: None,
-                        timestamp,
-                    });
-                }
-            }
+        if let Some(idx) = line.find("] OnPlayerJoined ") {
+            let parts = &line[idx + 17..];
+            return if let Some(caps) = self.player_re.captures(parts) {
+                Some(LogEvent::PlayerJoined {
+                    display_name: caps[1].to_string(),
+                    user_id: Some(caps[2].to_string()),
+                    timestamp: get_timestamp(),
+                })
+            } else {
+                Some(LogEvent::PlayerJoined {
+                    display_name: parts.trim().to_string(),
+                    user_id: None,
+                    timestamp: get_timestamp(),
+                })
+            };
         }
 
         // 4. Player Left
-        if line.contains("[Behaviour] OnPlayerLeft") && !line.contains("OnPlayerLeftRoom") {
-            if let Some(parts) = line.split("] OnPlayerLeft ").nth(1) {
-                if let Some(caps) = self.player_left_re.captures(parts) {
-                    return Some(LogEvent::PlayerLeft {
+        if let Some(idx) = line.find("] OnPlayerLeft ") {
+            if !line.contains("OnPlayerLeftRoom") {
+                let parts = &line[idx + 15..];
+                return if let Some(caps) = self.player_re.captures(parts) {
+                    Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
-                    });
+                        timestamp: get_timestamp(),
+                    })
                 } else {
-                    return Some(LogEvent::PlayerLeft {
+                    Some(LogEvent::PlayerLeft {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
-                    });
-                }
+                        timestamp: get_timestamp(),
+                    })
+                };
             }
         }
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: get_timestamp(),
+            });
         }
 
         None
     }
 
-    fn read_new_lines(&mut self, tx: &mpsc::UnboundedSender<LogEvent>) {
+    async fn read_new_lines(&mut self, tx: &mpsc::UnboundedSender<LogEvent>) {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
         let log_file = match &self.current_log_file {
             Some(f) => f.clone(),
             None => return,
         };
 
-        let metadata = match fs::metadata(&log_file) {
+        let metadata = match tokio::fs::metadata(&log_file).await {
             Ok(m) => m,
             Err(_) => return,
         };
@@ -188,18 +197,22 @@ impl LogWatcher {
             return;
         }
 
-        let mut file = match fs::File::open(&log_file) {
+        let mut file = match tokio::fs::File::open(&log_file).await {
             Ok(f) => f,
             Err(_) => return,
         };
 
-        if file.seek(SeekFrom::Start(self.last_read_pos)).is_err() {
+        if file
+            .seek(SeekFrom::Start(self.last_read_pos))
+            .await
+            .is_err()
+        {
             return;
         }
 
         let bytes_to_read = (file_size - self.last_read_pos) as usize;
         let mut buffer = vec![0u8; bytes_to_read];
-        if file.read_exact(&mut buffer).is_err() {
+        if file.read_exact(&mut buffer).await.is_err() {
             return;
         }
 
@@ -217,14 +230,15 @@ impl LogWatcher {
         // If the content doesn't end with a newline, the last line is incomplete
         let has_trailing_newline = content.ends_with('\n') || content.ends_with('\r');
 
-        let mut lines: Vec<&str> = content.lines().collect();
+        let mut lines_iter = content.lines().peekable();
 
-        if !has_trailing_newline && !lines.is_empty() {
-            // Save the incomplete last line for next read
-            self.incomplete_line = lines.pop().unwrap().to_string();
-        }
+        while let Some(line) = lines_iter.next() {
+            if lines_iter.peek().is_none() && !has_trailing_newline {
+                // Save the incomplete last line for next read
+                self.incomplete_line = line.to_string();
+                break;
+            }
 
-        for line in lines {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 if let Some(event) = self.parse_line(trimmed) {
@@ -235,10 +249,10 @@ impl LogWatcher {
     }
 
     /// Read the log file to find the byte offset just before the last `Entering Room` event.
-    fn find_last_room_offset(&self, path: &Path) -> u64 {
-        use std::io::{BufRead, BufReader};
+    async fn find_last_room_offset(&self, path: &Path) -> u64 {
+        use tokio::io::{AsyncBufReadExt, BufReader};
 
-        let file = match std::fs::File::open(path) {
+        let file = match tokio::fs::File::open(path).await {
             Ok(f) => f,
             Err(_) => return 0,
         };
@@ -250,7 +264,7 @@ impl LogWatcher {
         let mut last_found_offset: Option<u64> = None;
         let mut line = String::new();
 
-        while let Ok(bytes_read) = reader.read_line(&mut line) {
+        while let Ok(bytes_read) = reader.read_line(&mut line).await {
             if bytes_read == 0 {
                 break; // EOF
             }
@@ -289,11 +303,11 @@ impl LogWatcher {
             // 2. Initialize log file tracking
             self.current_log_file = self.get_latest_log_file();
             if let Some(ref log_file) = self.current_log_file {
-                if let Ok(meta) = fs::metadata(log_file) {
+                if let Ok(meta) = tokio::fs::metadata(log_file).await {
                     if was_running {
                         // App started AFTER VRChat: find exact location of last room join
                         info!("{}", t!("vrchat_was_running_catchup"));
-                        self.last_read_pos = self.find_last_room_offset(log_file);
+                        self.last_read_pos = self.find_last_room_offset(log_file).await;
                         info!("{}", t!("resuming_log_tracking", self.last_read_pos));
                     } else {
                         // App started BEFORE VRChat: ignore past session, only read new lines
@@ -301,7 +315,7 @@ impl LogWatcher {
                         self.last_read_pos = meta.len();
                     }
                 }
-                self.read_new_lines(&tx);
+                self.read_new_lines(&tx).await;
             }
 
             // 3. Normal polling loop (simpler and more reliable on Windows than fsnotify)
@@ -318,11 +332,86 @@ impl LogWatcher {
                     }
                 }
 
-                self.read_new_lines(&tx);
+                self.read_new_lines(&tx).await;
             }
         });
 
         info!("{}", t!("watching_directory", log_dir.display()));
         Ok(rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_timestamp() {
+        let line = "2026.03.08 01:14:09 [Behaviour] Entering Room: Home";
+        assert_eq!(LogWatcher::parse_timestamp(line), "2026-03-08T01:14:09");
+
+        let invalid = "Invalid line";
+        assert_eq!(LogWatcher::parse_timestamp(invalid), "");
+    }
+
+    #[test]
+    fn test_parse_line_world_entering() {
+        let watcher = LogWatcher::new();
+        let line = "2026.03.08 01:14:09 [Behaviour] Entering Room: Home";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::Location {
+            world_name,
+            timestamp,
+        } = event
+        {
+            assert_eq!(world_name, "Home");
+            assert_eq!(timestamp, "2026-03-08T01:14:09");
+        } else {
+            panic!("Expected Location event");
+        }
+    }
+
+    #[test]
+    fn test_parse_line_player_joined() {
+        let watcher = LogWatcher::new();
+        let line = "2026.03.08 01:14:10 [Behaviour] OnPlayerJoined PlayerOne (usr_12345678-abcd-1234-abcd-1234567890ab)";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::PlayerJoined {
+            display_name,
+            user_id,
+            timestamp,
+        } = event
+        {
+            assert_eq!(display_name, "PlayerOne");
+            assert_eq!(
+                user_id,
+                Some("usr_12345678-abcd-1234-abcd-1234567890ab".to_string())
+            );
+            assert_eq!(timestamp, "2026-03-08T01:14:10");
+        } else {
+            panic!("Expected PlayerJoined event");
+        }
+    }
+
+    #[test]
+    fn test_parse_line_player_left() {
+        let watcher = LogWatcher::new();
+        let line = "2026.03.08 01:14:11 [Behaviour] OnPlayerLeft PlayerOne (usr_12345678-abcd-1234-abcd-1234567890ab)";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::PlayerLeft {
+            display_name,
+            user_id,
+            timestamp,
+        } = event
+        {
+            assert_eq!(display_name, "PlayerOne");
+            assert_eq!(
+                user_id,
+                Some("usr_12345678-abcd-1234-abcd-1234567890ab".to_string())
+            );
+            assert_eq!(timestamp, "2026-03-08T01:14:11");
+        } else {
+            panic!("Expected PlayerLeft event");
+        }
     }
 }
