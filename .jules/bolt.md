@@ -1,0 +1,3 @@
+## 2025-02-14 - Optimized Log Watching Hot Path
+**Learning:** Log parsing in VRChat logs is a hot path where every line is processed. Redundant timestamp parsing and multiple regex compilations cause significant overhead. Using early return heuristics and lazy evaluation (via closures) for expensive operations like timestamp parsing provides a major performance boost.
+**Action:** Always use early return keywords (e.g., `[Behaviour]`) and defer expensive string manipulations until a relevant event is confirmed. Use `peekable` iterators instead of `collect()` to avoid unnecessary allocations in line-by-line processing.
