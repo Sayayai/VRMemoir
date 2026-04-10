@@ -1,0 +1,3 @@
+## 2025-02-14 - Optimizing VRChat Log Watcher
+**Learning:** In hot paths like log parsing, early return heuristics (e.g., checking for keywords like `[Behaviour]`) can drastically reduce execution time by skipping expensive operations like regex matching. Additionally, using `peekable` iterators instead of collecting lines into a `Vec` reduces memory allocations and improves throughput when processing large log buffers.
+**Action:** Always prioritize early-exit patterns and lazy evaluation (via closures or deferred logic) in performance-critical loops. Use iterators directly whenever possible to minimize intermediate allocations.
