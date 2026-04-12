@@ -311,7 +311,7 @@ fn capture_thread(
                 .saturating_sub(vrc_queue.capacity() - vrc_queue.len());
             vrc_queue.reserve(additional);
             if let Err(e) = capture_client.read_from_device_to_deque(&mut vrc_queue) {
-warn!("{}", t!("vrchat_capture_read_error", format!("{:?}", e)));
+                warn!("{}", t!("vrchat_capture_read_error", format!("{:?}", e)));
             }
         }
 
@@ -327,7 +327,7 @@ warn!("{}", t!("vrchat_capture_read_error", format!("{:?}", e)));
                     .saturating_sub(mic_queue.capacity() - mic_queue.len());
                 mic_queue.reserve(additional);
                 if let Err(e) = mc.capture_client.read_from_device_to_deque(&mut mic_queue) {
-warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
+                    warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
                 }
             }
         }
@@ -373,11 +373,11 @@ warn!("{}", t!("mic_capture_read_error", format!("{:?}", e)));
                         ogg::PacketWriteEndInfo::NormalPacket,
                         granule_pos,
                     ) {
-warn!("{}", t!("ogg_write_error", format!("{:?}", e)));
+                        warn!("{}", t!("ogg_write_error", format!("{:?}", e)));
                     }
                 }
                 Err(e) => {
-warn!("{}", t!("opus_encode_error", format!("{:?}", e)));
+                    warn!("{}", t!("opus_encode_error", format!("{:?}", e)));
                 }
             }
         }
