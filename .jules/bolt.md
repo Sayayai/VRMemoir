@@ -1,0 +1,3 @@
+## 2026-03-08 - [Log Watcher Performance Optimization]
+**Learning:** In hot paths like log watchers that scan thousands of lines, expensive operations like timestamp parsing or regex should be deferred behind simple keyword-based heuristics. Sorting file lists for the "latest" file is $O(N \log N)$ and can be $O(N)$ with `max_by_key`. Avoiding `Vec` collections by using iterators reduces heap churn.
+**Action:** Use early return heuristics, lazy evaluation (closures), and iterator-based processing for high-frequency polling tasks. Prefer `max_by_key` over `sort` for finding single extreme values.
