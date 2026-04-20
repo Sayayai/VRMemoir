@@ -68,22 +68,18 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        // Optimization: Use max_by_key instead of collecting and sorting (O(N) vs O(N log N)).
+        // Also avoid unnecessary String allocation by using the Cow from to_string_lossy directly.
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("output_log_") && name.ends_with(".txt")
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("output_log_") && name_str.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
@@ -98,50 +94,53 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Early return for irrelevant lines to avoid regex and timestamp parsing
+        if !line.contains("[Behaviour]") && !line.contains("uSpeak") {
+            return None;
+        }
 
         // 1. World Name
-        if line.contains("[Behaviour] Entering Room: ") {
-            if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
-                return Some(LogEvent::Location {
-                    world_name: world_name.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(pos) = line.find("] Entering Room: ") {
+            let world_name = &line[pos + 17..];
+            return Some(LogEvent::Location {
+                world_name: world_name.to_string(),
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         // 2. Instance ID
-        if line.contains("[Behaviour] Joining wrld_") {
-            if let Some(location) = line.split("] Joining ").nth(1) {
-                return Some(LogEvent::LocationInstance {
-                    location: location.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(pos) = line.find("] Joining wrld_") {
+            let location = &line[pos + 10..];
+            return Some(LogEvent::LocationInstance {
+                location: location.to_string(),
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         // 3. Player Joined
-        if line.contains("[Behaviour] OnPlayerJoined") {
-            if let Some(parts) = line.split("] OnPlayerJoined ").nth(1) {
-                if let Some(caps) = self.player_joined_re.captures(parts) {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: caps[1].to_string(),
-                        user_id: Some(caps[2].to_string()),
-                        timestamp,
-                    });
-                } else {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: parts.trim().to_string(),
-                        user_id: None,
-                        timestamp,
-                    });
-                }
+        if let Some(pos) = line.find("] OnPlayerJoined ") {
+            let parts = &line[pos + 17..];
+            let timestamp = Self::parse_timestamp(line);
+            if let Some(caps) = self.player_joined_re.captures(parts) {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: caps[1].to_string(),
+                    user_id: Some(caps[2].to_string()),
+                    timestamp,
+                });
+            } else {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: parts.trim().to_string(),
+                    user_id: None,
+                    timestamp,
+                });
             }
         }
 
         // 4. Player Left
-        if line.contains("[Behaviour] OnPlayerLeft") && !line.contains("OnPlayerLeftRoom") {
-            if let Some(parts) = line.split("] OnPlayerLeft ").nth(1) {
+        if let Some(pos) = line.find("] OnPlayerLeft ") {
+            if !line.contains("OnPlayerLeftRoom") {
+                let parts = &line[pos + 15..];
+                let timestamp = Self::parse_timestamp(line);
                 if let Some(caps) = self.player_left_re.captures(parts) {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
@@ -160,7 +159,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         None
@@ -214,21 +215,19 @@ impl LogWatcher {
             s
         };
 
-        // If the content doesn't end with a newline, the last line is incomplete
-        let has_trailing_newline = content.ends_with('\n') || content.ends_with('\r');
-
-        let mut lines: Vec<&str> = content.lines().collect();
-
-        if !has_trailing_newline && !lines.is_empty() {
-            // Save the incomplete last line for next read
-            self.incomplete_line = lines.pop().unwrap().to_string();
-        }
-
-        for line in lines {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                if let Some(event) = self.parse_line(trimmed) {
-                    let _ = tx.send(event);
+        // Optimization: Iterate over lines without collecting into a Vec.
+        // Use a peekable iterator to identify if the last line is incomplete.
+        let mut lines = content.lines().peekable();
+        while let Some(line) = lines.next() {
+            if lines.peek().is_none() && !content.ends_with('\n') && !content.ends_with('\r') {
+                // Save the incomplete last line for next read
+                self.incomplete_line = line.to_string();
+            } else {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    if let Some(event) = self.parse_line(trimmed) {
+                        let _ = tx.send(event);
+                    }
                 }
             }
         }
