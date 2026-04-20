@@ -1,0 +1,3 @@
+## 2026-03-08 - [Log Watcher Optimization]
+**Learning:** Eager timestamp parsing in log watchers is a significant CPU sink. In VRChat logs, over 99% of lines are irrelevant to the application's state machine, yet the code was performing string replacements and slicing for every single line. Additionally, sorting directories to find the latest log file is O(N log N) and collects all entries into memory, which is unnecessary when only the newest file is needed.
+**Action:** Implement lazy evaluation for expensive parsing operations (like timestamps) using closures. Use `max_by_key` for O(N) directory searches to minimize system calls and avoid intermediate allocations.

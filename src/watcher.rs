@@ -68,22 +68,18 @@ impl LogWatcher {
             return None;
         }
 
-        let mut files: Vec<_> = fs::read_dir(&self.log_dir)
+        // Optimization: O(N) search using max_by_key instead of O(N log N) sort.
+        // Also avoids collecting into a Vec.
+        fs::read_dir(&self.log_dir)
             .ok()?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.starts_with("output_log_") && name.ends_with(".txt")
+                let name = e.file_name();
+                let name_s = name.to_string_lossy();
+                name_s.starts_with("output_log_") && name_s.ends_with(".txt")
             })
-            .collect();
-
-        files.sort_by(|a, b| {
-            let ma = a.metadata().and_then(|m| m.modified()).ok();
-            let mb = b.metadata().and_then(|m| m.modified()).ok();
-            mb.cmp(&ma)
-        });
-
-        files.first().map(|e| e.path())
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
     }
 
     fn parse_timestamp(line: &str) -> String {
@@ -98,14 +94,21 @@ impl LogWatcher {
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
+        // Optimization: Lazy timestamp parsing.
+        // Avoids expensive string manipulation for irrelevant log lines.
+        let mut timestamp = None;
+        let mut get_ts = || {
+            timestamp
+                .get_or_insert_with(|| Self::parse_timestamp(line))
+                .clone()
+        };
 
         // 1. World Name
         if line.contains("[Behaviour] Entering Room: ") {
             if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
                 return Some(LogEvent::Location {
                     world_name: world_name.to_string(),
-                    timestamp,
+                    timestamp: get_ts(),
                 });
             }
         }
@@ -115,7 +118,7 @@ impl LogWatcher {
             if let Some(location) = line.split("] Joining ").nth(1) {
                 return Some(LogEvent::LocationInstance {
                     location: location.to_string(),
-                    timestamp,
+                    timestamp: get_ts(),
                 });
             }
         }
@@ -127,13 +130,13 @@ impl LogWatcher {
                     return Some(LogEvent::PlayerJoined {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
+                        timestamp: get_ts(),
                     });
                 } else {
                     return Some(LogEvent::PlayerJoined {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
+                        timestamp: get_ts(),
                     });
                 }
             }
@@ -146,13 +149,13 @@ impl LogWatcher {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
+                        timestamp: get_ts(),
                     });
                 } else {
                     return Some(LogEvent::PlayerLeft {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
+                        timestamp: get_ts(),
                     });
                 }
             }
@@ -160,7 +163,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: get_ts(),
+            });
         }
 
         None
@@ -217,14 +222,16 @@ impl LogWatcher {
         // If the content doesn't end with a newline, the last line is incomplete
         let has_trailing_newline = content.ends_with('\n') || content.ends_with('\r');
 
-        let mut lines: Vec<&str> = content.lines().collect();
+        // Optimization: Use an iterator directly instead of collecting into a Vec.
+        let mut lines_iter = content.lines().peekable();
 
-        if !has_trailing_newline && !lines.is_empty() {
-            // Save the incomplete last line for next read
-            self.incomplete_line = lines.pop().unwrap().to_string();
-        }
+        while let Some(line) = lines_iter.next() {
+            if lines_iter.peek().is_none() && !has_trailing_newline {
+                // Save the incomplete last line for next read
+                self.incomplete_line = line.to_string();
+                break;
+            }
 
-        for line in lines {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 if let Some(event) = self.parse_line(trimmed) {
