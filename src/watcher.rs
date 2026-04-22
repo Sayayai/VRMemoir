@@ -39,8 +39,7 @@ pub struct LogWatcher {
     current_log_file: Option<PathBuf>,
     last_read_pos: u64,
     incomplete_line: String,
-    player_joined_re: Regex,
-    player_left_re: Regex,
+    player_re: Regex,
 }
 
 impl LogWatcher {
@@ -58,8 +57,7 @@ impl LogWatcher {
             current_log_file: None,
             last_read_pos: 0,
             incomplete_line: String::new(),
-            player_joined_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
-            player_left_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
         }
     }
 
@@ -90,69 +88,71 @@ impl LogWatcher {
         // VRChat log timestamps are local time: "2026.03.08 01:14:09"
         // Guard against non-ASCII lines (e.g. Japanese text) that would panic on byte slicing
         if line.len() >= 19 && line.is_char_boundary(19) && line.as_bytes()[0].is_ascii_digit() {
-            let date_str = &line[..19];
-            date_str.replace('.', "-").replacen(' ', "T", 1)
+            let mut s = String::with_capacity(19);
+            // Optimized timestamp conversion: "2026.03.08 01:14:09" -> "2026-03-08T01:14:09"
+            for (i, &byte) in line.as_bytes().iter().take(19).enumerate() {
+                match i {
+                    4 | 7 => s.push('-'),
+                    10 => s.push('T'),
+                    _ => s.push(byte as char),
+                }
+            }
+            s
         } else {
             String::new()
         }
     }
 
     fn parse_line(&self, line: &str) -> Option<LogEvent> {
-        let timestamp = Self::parse_timestamp(line);
-
         // 1. World Name
-        if line.contains("[Behaviour] Entering Room: ") {
-            if let Some(world_name) = line.split("] Entering Room: ").nth(1) {
-                return Some(LogEvent::Location {
-                    world_name: world_name.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(pos) = line.find("] Entering Room: ") {
+            return Some(LogEvent::Location {
+                world_name: line[pos + 17..].to_string(),
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         // 2. Instance ID
-        if line.contains("[Behaviour] Joining wrld_") {
-            if let Some(location) = line.split("] Joining ").nth(1) {
-                return Some(LogEvent::LocationInstance {
-                    location: location.to_string(),
-                    timestamp,
-                });
-            }
+        if let Some(pos) = line.find("] Joining wrld_") {
+            return Some(LogEvent::LocationInstance {
+                location: line[pos + 10..].to_string(),
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         // 3. Player Joined
-        if line.contains("[Behaviour] OnPlayerJoined") {
-            if let Some(parts) = line.split("] OnPlayerJoined ").nth(1) {
-                if let Some(caps) = self.player_joined_re.captures(parts) {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: caps[1].to_string(),
-                        user_id: Some(caps[2].to_string()),
-                        timestamp,
-                    });
-                } else {
-                    return Some(LogEvent::PlayerJoined {
-                        display_name: parts.trim().to_string(),
-                        user_id: None,
-                        timestamp,
-                    });
-                }
+        if let Some(pos) = line.find("] OnPlayerJoined ") {
+            let parts = &line[pos + 17..];
+            if let Some(caps) = self.player_re.captures(parts) {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: caps[1].to_string(),
+                    user_id: Some(caps[2].to_string()),
+                    timestamp: Self::parse_timestamp(line),
+                });
+            } else {
+                return Some(LogEvent::PlayerJoined {
+                    display_name: parts.trim().to_string(),
+                    user_id: None,
+                    timestamp: Self::parse_timestamp(line),
+                });
             }
         }
 
         // 4. Player Left
-        if line.contains("[Behaviour] OnPlayerLeft") && !line.contains("OnPlayerLeftRoom") {
-            if let Some(parts) = line.split("] OnPlayerLeft ").nth(1) {
-                if let Some(caps) = self.player_left_re.captures(parts) {
+        if let Some(pos) = line.find("] OnPlayerLeft ") {
+            if !line.contains("OnPlayerLeftRoom") {
+                let parts = &line[pos + 15..];
+                if let Some(caps) = self.player_re.captures(parts) {
                     return Some(LogEvent::PlayerLeft {
                         display_name: caps[1].to_string(),
                         user_id: Some(caps[2].to_string()),
-                        timestamp,
+                        timestamp: Self::parse_timestamp(line),
                     });
                 } else {
                     return Some(LogEvent::PlayerLeft {
                         display_name: parts.trim().to_string(),
                         user_id: None,
-                        timestamp,
+                        timestamp: Self::parse_timestamp(line),
                     });
                 }
             }
@@ -160,7 +160,9 @@ impl LogWatcher {
 
         // 5. uSpeak / Voice Ready
         if line.contains("uSpeak") && line.contains("Start Microphone") {
-            return Some(LogEvent::VoiceReady { timestamp });
+            return Some(LogEvent::VoiceReady {
+                timestamp: Self::parse_timestamp(line),
+            });
         }
 
         None
@@ -217,14 +219,15 @@ impl LogWatcher {
         // If the content doesn't end with a newline, the last line is incomplete
         let has_trailing_newline = content.ends_with('\n') || content.ends_with('\r');
 
-        let mut lines: Vec<&str> = content.lines().collect();
+        let mut lines = content.lines().peekable();
 
-        if !has_trailing_newline && !lines.is_empty() {
-            // Save the incomplete last line for next read
-            self.incomplete_line = lines.pop().unwrap().to_string();
-        }
+        while let Some(line) = lines.next() {
+            if lines.peek().is_none() && !has_trailing_newline {
+                // Save the incomplete last line for next read
+                self.incomplete_line = line.to_string();
+                break;
+            }
 
-        for line in lines {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 if let Some(event) = self.parse_line(trimmed) {
@@ -324,5 +327,174 @@ impl LogWatcher {
 
         info!("{}", t!("watching_directory", log_dir.display()));
         Ok(rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_timestamp() {
+        let line = "2026.03.08 01:14:09 [Behaviour] Entering Room: Test World";
+        let ts = LogWatcher::parse_timestamp(line);
+        assert_eq!(ts, "2026-03-08T01:14:09");
+
+        let invalid_line = "short line";
+        let ts2 = LogWatcher::parse_timestamp(invalid_line);
+        assert_eq!(ts2, "");
+    }
+
+    #[test]
+    fn test_parse_line_world() {
+        let watcher = LogWatcher {
+            log_dir: PathBuf::new(),
+            current_log_file: None,
+            last_read_pos: 0,
+            incomplete_line: String::new(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+        };
+
+        let line = "2026.03.08 01:14:09 [Behaviour] Entering Room: Test World";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::Location {
+            world_name,
+            timestamp,
+        } = event
+        {
+            assert_eq!(world_name, "Test World");
+            assert_eq!(timestamp, "2026-03-08T01:14:09");
+        } else {
+            panic!("Wrong event type");
+        }
+    }
+
+    #[test]
+    fn test_parse_line_joining() {
+        let watcher = LogWatcher {
+            log_dir: PathBuf::new(),
+            current_log_file: None,
+            last_read_pos: 0,
+            incomplete_line: String::new(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+        };
+
+        let line = "2026.03.08 01:14:10 [Behaviour] Joining wrld_12345:67890";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::LocationInstance {
+            location,
+            timestamp,
+        } = event
+        {
+            assert_eq!(location, "wrld_12345:67890");
+            assert_eq!(timestamp, "2026-03-08T01:14:10");
+        } else {
+            panic!("Wrong event type");
+        }
+    }
+
+    #[test]
+    fn test_parse_line_player_joined() {
+        let watcher = LogWatcher {
+            log_dir: PathBuf::new(),
+            current_log_file: None,
+            last_read_pos: 0,
+            incomplete_line: String::new(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+        };
+
+        let line = "2026.03.08 01:14:11 [Behaviour] OnPlayerJoined Bolt (usr_abcd-1234)";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::PlayerJoined {
+            display_name,
+            user_id,
+            timestamp,
+        } = event
+        {
+            assert_eq!(display_name, "Bolt");
+            assert_eq!(user_id, Some("usr_abcd-1234".to_string()));
+            assert_eq!(timestamp, "2026-03-08T01:14:11");
+        } else {
+            panic!("Wrong event type");
+        }
+    }
+
+    #[test]
+    fn test_parse_line_player_left() {
+        let watcher = LogWatcher {
+            log_dir: PathBuf::new(),
+            current_log_file: None,
+            last_read_pos: 0,
+            incomplete_line: String::new(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+        };
+
+        let line = "2026.03.08 01:14:12 [Behaviour] OnPlayerLeft Bolt (usr_abcd-1234)";
+        let event = watcher.parse_line(line).unwrap();
+        if let LogEvent::PlayerLeft {
+            display_name,
+            user_id,
+            timestamp,
+        } = event
+        {
+            assert_eq!(display_name, "Bolt");
+            assert_eq!(user_id, Some("usr_abcd-1234".to_string()));
+            assert_eq!(timestamp, "2026-03-08T01:14:12");
+        } else {
+            panic!("Wrong event type");
+        }
+    }
+
+    #[test]
+    fn test_read_new_lines_incomplete() {
+        use std::io::Write;
+
+        let test_dir = Path::new("test_logs");
+        fs::create_dir_all(test_dir).unwrap();
+        let log_file = test_dir.join("output_log_test.txt");
+        {
+            let mut f = fs::File::create(&log_file).unwrap();
+            f.write_all(b"2026.03.08 01:14:09 [Behaviour] Entering Room: World1\n2026.03.08 01:14:10 [Behaviour] Joining ").unwrap();
+        }
+
+        let mut watcher = LogWatcher {
+            log_dir: test_dir.to_path_buf(),
+            current_log_file: Some(log_file.clone()),
+            last_read_pos: 0,
+            incomplete_line: String::new(),
+            player_re: Regex::new(r"(.+) \((usr_[a-f0-9-]+)\)").unwrap(),
+        };
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        watcher.read_new_lines(&tx);
+
+        let event = rx.try_recv().unwrap();
+        if let LogEvent::Location { world_name, .. } = event {
+            assert_eq!(world_name, "World1");
+        } else {
+            panic!("Wrong event");
+        }
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            watcher.incomplete_line,
+            "2026.03.08 01:14:10 [Behaviour] Joining "
+        );
+
+        // Append the rest
+        {
+            let mut f = fs::OpenOptions::new().append(true).open(&log_file).unwrap();
+            f.write_all(b"wrld_1234\n").unwrap();
+        }
+
+        watcher.read_new_lines(&tx);
+        let event = rx.try_recv().unwrap();
+        if let LogEvent::LocationInstance { location, .. } = event {
+            assert_eq!(location, "wrld_1234");
+        } else {
+            panic!("Wrong event");
+        }
+        assert!(watcher.incomplete_line.is_empty());
+
+        fs::remove_dir_all(test_dir).unwrap();
     }
 }
