@@ -2,11 +2,15 @@ use crate::api::VRChatAPI;
 use crate::db::Database;
 use crate::t;
 use anyhow::{anyhow, Result};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+static SAFE_FILENAME_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\\/:*?"<>|]"#).unwrap());
 
 pub struct BioManager {
     api: Arc<VRChatAPI>,
@@ -135,8 +139,7 @@ impl BioManager {
             .and_then(|v| v.as_str())
             .unwrap_or("unknown_user");
         let display_name = display_name_val.trim();
-        let re = regex::Regex::new(r#"[\\/:*?"<>|]"#)?;
-        let display_name_safe = re.replace_all(display_name, "_").to_string();
+        let display_name_safe = SAFE_FILENAME_RE.replace_all(display_name, "_").to_string();
 
         let mut md_content = Vec::new();
         // L1 is the title
@@ -389,8 +392,9 @@ impl BioManager {
             return None;
         }
 
-        let re = regex::Regex::new(r#"[\\/:*?"<>|]"#).ok()?;
-        let display_name_safe = re.replace_all(display_name.trim(), "_").to_string();
+        let display_name_safe = SAFE_FILENAME_RE
+            .replace_all(display_name.trim(), "_")
+            .to_string();
         let search_pattern = format!("{}_L1-", display_name_safe);
 
         if let Ok(entries) = std::fs::read_dir(bio_dir) {
