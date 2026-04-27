@@ -1,7 +1,7 @@
 use anyhow::Result;
 use regex::Regex;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, SeekFrom};
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -193,7 +193,7 @@ impl LogWatcher {
             Err(_) => return,
         };
 
-        if file.seek(SeekFrom::Start(self.last_read_pos)).is_err() {
+        if std::io::Seek::seek(&mut file, SeekFrom::Start(self.last_read_pos)).is_err() {
             return;
         }
 
