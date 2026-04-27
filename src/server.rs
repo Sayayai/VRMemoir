@@ -1,3 +1,6 @@
+use crate::api::{LoginStatus, VRChatAPI};
+use crate::bio::BioManager;
+use crate::db::Database;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -8,10 +11,6 @@ use axum::{
 use serde_json::json;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-// use tracing::info;
-use crate::api::{LoginStatus, VRChatAPI};
-use crate::bio::BioManager;
-use crate::db::Database;
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -147,8 +146,6 @@ async fn post_logout(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({ "success": true }))
 }
 
-// Removed post_personality
-
 async fn get_vrc_user_info(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<String>,
@@ -167,5 +164,3 @@ async fn get_vrc_user_info(
             .into_response(),
     }
 }
-
-// Redundant formatter removed (now in bio.rs)
