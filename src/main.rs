@@ -11,7 +11,7 @@ mod watcher;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 use tracing::{error, info};
 
 use crate::api::VRChatAPI;
@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
             println!("\n{}", t!("tfa_required", method_str));
 
             let stdin_2fa = BufReader::new(tokio::io::stdin());
-            let mut lines_2fa = stdin_2fa.lines();
+            let mut lines_2fa = tokio::io::AsyncBufReadExt::lines(stdin_2fa);
 
             loop {
                 println!("{}", t!("tfa_prompt"));
@@ -280,7 +280,7 @@ async fn main() -> Result<()> {
     let bio_for_stdin = bio_manager.clone();
     tokio::spawn(async move {
         let std_in = tokio::io::stdin();
-        let mut reader = BufReader::new(std_in).lines();
+        let mut reader = tokio::io::AsyncBufReadExt::lines(BufReader::new(std_in));
         let re = regex::Regex::new(r"^usr_[a-fA-F0-9\-]+$").unwrap();
 
         while let Ok(Some(line)) = reader.next_line().await {
